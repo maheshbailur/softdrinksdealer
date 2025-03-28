@@ -4,6 +4,7 @@ class Drink {
   final int stock; // Current stock
   final String category;
   final int? manufacturerId; // Foreign key to Manufacturers table
+  final String? manufacturerName;
 
   Drink({
     required this.id,
@@ -11,6 +12,7 @@ class Drink {
     required this.category,
     required this.stock,
     this.manufacturerId,
+    this.manufacturerName,
   });
 
   Map<String, dynamic> toMap() {
@@ -20,6 +22,7 @@ class Drink {
       'stock': stock,
       'category': category,
       'manufacturer_id': manufacturerId,
+      'manufacturer_name': manufacturerName,
     };
   }
 
@@ -30,6 +33,7 @@ class Drink {
       category: map['category'] ?? "Uncategorized", // ✅ Default category
       stock: map['stock'] ?? 0, // ✅ Default stock to 0
       manufacturerId: map['manufacturer_id'], // Nullable, so no default needed
+      manufacturerName: map['manufacturer_name'] ?? "Unknown Manufacturer",
     );
   }
 
@@ -39,6 +43,7 @@ class Drink {
     int? stock,
     String? category,
     int? manufacturerId,
+    String? manufacturerName,
   }) {
     return Drink(
       id: id ?? this.id,
@@ -46,6 +51,7 @@ class Drink {
       stock: stock ?? this.stock,
       category: category ?? this.category,
       manufacturerId: manufacturerId ?? this.manufacturerId,
+      manufacturerName: manufacturerName ?? this.manufacturerName,
     );
   }
 

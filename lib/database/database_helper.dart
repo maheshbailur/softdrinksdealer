@@ -57,11 +57,9 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         drink_id INTEGER NOT NULL,
         quantity INTEGER NOT NULL,
-        price REAL NOT NULL,
-        manufacturer_id INTEGER NOT NULL,
+        price REAL NOT NULL,        
         transaction_date TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (drink_id) REFERENCES Drinks (id) ON DELETE CASCADE,
-        FOREIGN KEY (manufacturer_id) REFERENCES Manufacturers (id) ON DELETE CASCADE
+        FOREIGN KEY (drink_id) REFERENCES Drinks (id) ON DELETE CASCADE        
       )
     ''');
 

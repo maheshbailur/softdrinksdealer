@@ -1,20 +1,33 @@
 import '../database/database_helper.dart';
 import '../models/drink.dart';
-import '../models/transaction.dart';
+// import '../models/transaction.dart';
 
 class DrinkRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
   // Get all drinks
-  Future<List<Drink>> getAllDrinks() async {
-    final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query('Drinks');
+  // Future<List<Drink>> getAllDrinks() async {
+  //   final db = await _dbHelper.database;
+  //   final List<Map<String, dynamic>> maps = await db.query('Drinks');
 
-    print("Drinks: $maps");
-    return List.generate(maps.length, (i) {
-      return Drink.fromMap(maps[i]);
-    });
+  //   print("Drinks: $maps");
+  //   return List.generate(maps.length, (i) {
+  //     return Drink.fromMap(maps[i]);
+  //   });
+  // }
+
+  Future<List<Drink>> getAllDrinks() async {
+    final db = await DatabaseHelper.instance.database;
+
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT d.*, m.name AS manufacturer_name 
+      FROM Drinks d
+      LEFT JOIN Manufacturers m ON d.manufacturer_id = m.id
+    ''');
+
+    return List.generate(maps.length, (i) => Drink.fromMap(maps[i]));
   }
+
 
   // Add a new drink
   Future<int> insertDrink(Drink drink) async {
@@ -34,8 +47,20 @@ class DrinkRepository {
   }
 
   // Update drink stock
-  Future<int> updateDrinkStock(int drinkId, int newStock) async {
+  Future<int> updateDrinkStock(int drinkId, int additionalStock) async {
     final db = await _dbHelper.database;
+
+    // Fetch the existing drink details
+    Drink? drink = await getDrink(drinkId);
+    
+    if (drink == null) {
+      print("Drink not found with ID: $drinkId");
+      return 0; // Return 0 if drink doesn't exist
+    }
+
+    int newStock = drink.stock + additionalStock; // Add new stock
+
+    // Update the stock in the database
     return await db.update(
       'Drinks',
       {'stock': newStock},
@@ -43,6 +68,7 @@ class DrinkRepository {
       whereArgs: [drinkId],
     );
   }
+
 
   // Delete a drink
   Future<int> deleteDrink(int id) async {
@@ -60,7 +86,7 @@ class DrinkRepository {
     final List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT d.*, m.name AS manufacturer_name
       FROM Drinks d
-      JOIN Manufacturers m ON d.manufacturer = m.id
+      LEFT JOIN Manufacturers m ON d.manufacturer_id = m.id
       WHERE d.id = ?
     ''', [id]);
 
@@ -71,72 +97,11 @@ class DrinkRepository {
     return Drink(
       id: drinkData['id'],
       name: drinkData['name'],
-      manufacturerId: drinkData['manufacturer'], // Still storing ID
-      stock: drinkData['unit'],
-      // manufacturerName: drinkData['manufacturer_name'], // New field
-      // purchasePrice: drinkData['purchasePrice'],
+      manufacturerId: drinkData['manufacturer_id'], // Fixed column name
+      stock: drinkData['stock'], // Fixed column name
       category: drinkData['category'],
-      // unit: drinkData['unit'],
+      //manufacturerName: drinkData['manufacturer_name'], // If needed, add this field in your Drink model
     );
-  }
-
-
-  // Add a new IN transaction
-  Future<int> insertInTransaction(Transaction transaction) async {
-    final db = await _dbHelper.database;
-    int result = await db.insert('IN_Transactions', transaction.toMap());
-
-    // Update stock after adding purchase
-    await updateDrinkStock(transaction.drinkId, transaction.quantity);
-    return result;
-  }
-
-
-  // Add a new OUT transaction
-  Future<int> insertOutTransaction(Transaction transaction) async {
-    final db = await _dbHelper.database;
-    return await db.insert('OUT_Transactions', transaction.toMap());
-  }
-
-  // Get transactions by date range
-  Future<List<Transaction>> getTransactionsByDateRange(
-      DateTime start, DateTime end, String transactionType) async {
-    final db = await _dbHelper.database;
-    final tableName =
-        transactionType == 'in' ? 'IN_Transactions' : 'OUT_Transactions';
-
-    final List<Map<String, dynamic>> maps = await db.query(
-      tableName,
-      where: 'transaction_date BETWEEN ? AND ?',
-      whereArgs: [start.toIso8601String(), end.toIso8601String()],
-    );
-
-    return List.generate(maps.length, (i) {
-      return Transaction.fromMap(maps[i]);
-    });
-  }
-
-  // Get current stock for a drink
-  Future<int> getCurrentStock(int drinkId) async {
-    final db = await _dbHelper.database;
-
-    // Calculate stock from IN and OUT transactions
-    final inResult = await db.rawQuery('''
-      SELECT COALESCE(SUM(quantity), 0) as total_in
-      FROM IN_Transactions
-      WHERE drink_id = ?
-    ''', [drinkId]);
-
-    final outResult = await db.rawQuery('''
-      SELECT COALESCE(SUM(quantity), 0) as total_out
-      FROM OUT_Transactions
-      WHERE drink_id = ?
-    ''', [drinkId]);
-
-    final totalIn = inResult.first['total_in'] as int? ?? 0;
-    final totalOut = outResult.first['total_out'] as int? ?? 0;
-
-    return totalIn - totalOut;
   }
 
   // Add a payment

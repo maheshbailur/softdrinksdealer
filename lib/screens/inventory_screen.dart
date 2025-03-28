@@ -53,6 +53,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     try {
       // ✅ Fetch drinks using DrinkRepository
       drinks = await DrinkRepository().getAllDrinks();
+      print("Drinks List: $drinks");
 
       setState(() {}); // ✅ Refresh UI after fetching data
     } catch (e) {
@@ -119,8 +120,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           id: 0, // Let SQLite auto-increment handle the ID
           name: _nameController.text,
           manufacturerId: _selectedManufacturer,
-          category: _selectedCategory,
-          // unit: int.parse(_unitController.text), // Ensure unit is stored as an integer
+          category: _selectedCategory,          
           stock: 0, // Stock starts at zero, updated via IN_Transactions
         );
 
@@ -194,7 +194,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   margin: EdgeInsets.all(8),
                   child: ListTile(
                     title: Text(drink.name),
-                    subtitle: Text('${drink.manufacturerId} - ${drink.category}'),
+                    subtitle: Text('${drink.manufacturerName} - ${drink.category}'),
                     trailing: Text('${drink.stock}'),
                     onTap: () => _editDrink(drink),
                   ),
@@ -267,13 +267,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   validator: (value) => (value == null || value == -1) ? 'Please select a manufacturer' : null,
                 ),
                 // Purchase Price Input (Stored in IN_Transactions)
-                TextFormField(
-                  controller: _purchasePriceController,
-                  decoration: InputDecoration(labelText: 'Purchase Price'),
-                  keyboardType: TextInputType.number,
-                  validator: (value) =>
-                      value?.isEmpty ?? true ? 'Please enter purchase price' : null,
-                ),
+                // TextFormField(
+                //   controller: _purchasePriceController,
+                //   decoration: InputDecoration(labelText: 'Purchase Price'),
+                //   keyboardType: TextInputType.number,
+                //   validator: (value) =>
+                //       value?.isEmpty ?? true ? 'Please enter purchase price' : null,
+                // ),
 
                 // Category Dropdown
                 DropdownButtonFormField<String>(

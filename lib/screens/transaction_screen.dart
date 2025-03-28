@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import '../models/transaction.dart';
+import 'package:intl/intl.dart'; // Import this at the top
+import '../models/in_transaction.dart';
+import '../models/out_transaction.dart';
 import '../models/drink.dart';
 import '../models/purchaser.dart';
-import '../database/database_helper.dart';
+import '../repositories/transactions_repository.dart';
 import '../repositories/drink_repository.dart';
 
 class TransactionScreen extends StatefulWidget {
@@ -11,69 +13,66 @@ class TransactionScreen extends StatefulWidget {
 }
 
 class _TransactionScreenState extends State<TransactionScreen> {
-  List<Transaction> transactions = [];
+  List<Map<String, dynamic>> _transactions = [];
   List<Drink> drinks = [];
   List<Purchaser> purchasers = [];
+
   final _formKey = GlobalKey<FormState>();
-  final _unitController = TextEditingController();
   final _priceController = TextEditingController();
   final _quantityController = TextEditingController();
   Drink? _selectedDrink;
-  Purchaser? _selectedPurchaser; // For OUT transactions
+  Purchaser? _selectedPurchaser; // Only for OUT transactions
+
+  final transactionRepository = TransactionRepository();
+  final drinkRepository = DrinkRepository();
 
   @override
   void initState() {
     super.initState();
-    _loadDrinks();
-    _loadPurchasers();
+    _transactions = []; // Initialize with an empty list
+    _loadTransactions(); // Load data
+    _loadDrinks(); // Load drinks
   }
 
   Future<void> _loadDrinks() async {
-    final db = await DatabaseHelper.instance.database;
-    final List<Map<String, dynamic>> maps = await db.query('Drinks');
-    setState(() {
-      drinks = maps.map((map) => Drink.fromMap(map)).toList();
-    });
+    drinks = await drinkRepository.getAllDrinks(); // Ensure this method exists in DrinkRepository
+    setState(() {}); // Refresh UI after fetching data
   }
 
-  Future<void> _loadPurchasers() async {
-    final db = await DatabaseHelper.instance.database;
-    final List<Map<String, dynamic>> maps = await db.query('Purchasers');
+
+  Future<void> _loadTransactions() async {
+    final transactions = await transactionRepository.getTodayTransactions();
+
     setState(() {
-      purchasers = maps.map((map) => Purchaser.fromMap(map)).toList();
+      _transactions = List<Map<String, dynamic>>.from(transactions); // ✅ Convert to mutable list
+
+      _transactions.sort((a, b) {
+        final dateA = DateTime.parse(a['transaction_date']); 
+        final dateB = DateTime.parse(b['transaction_date']);
+        return dateB.compareTo(dateA); // Sort latest first
+      });
     });
+
+    print("Transactions after sorting: $_transactions");
+    print("Rebuilding UI with transactions count: ${_transactions.length}");
   }
+
 
   @override
   Widget build(BuildContext context) {
+    String todayDate = DateFormat('dd/MM/yyyy').format(DateTime.now());
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Transactions'),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              itemCount: transactions.length,
+      appBar: AppBar(title: Text('Transactions ($todayDate)')),
+      body: _transactions.isEmpty
+          ? Center(child: Text('No transactions today'))
+          : ListView.builder(
+              itemCount: _transactions.length,
               itemBuilder: (context, index) {
-                final transaction = transactions[index];
-                final drink = drinks.firstWhere(
-                  (d) => d.id == transaction.drinkId,
-                  orElse: () => Drink(id: 0, name: 'Unknown', category: 'select', stock: 0, manufacturerId: null),
-                );
-                return Card(
-                  margin: EdgeInsets.all(8),
-                  child: ListTile(
-                    title: Text('${transaction.transactionType.toUpperCase()} - ${drink.name}'),
-                    subtitle: Text('Unit: ${transaction.quantity}, Price: ${transaction.price}'),
-                    trailing: Text(transaction.transactionDate.toString().split(' ')[0]),
-                  ),
-                );
+                final txn = _transactions[index];
+                return _buildTransactionCard(txn, txn['type']); // Pass transaction type
               },
             ),
-          ),
-        ],
-      ),
       floatingActionButton: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -93,11 +92,23 @@ class _TransactionScreenState extends State<TransactionScreen> {
     );
   }
 
+
+Widget _buildTransactionCard(Map<String, dynamic> transaction, String type) {
+  return Card(
+    margin: EdgeInsets.all(8),
+    child: ListTile(
+      title: Text('$type [${transaction['drink_name']}-${transaction['manufacturer_name'] ?? 'Unknown'}] Qty: ${transaction['quantity']}, Price: ${transaction['price']}'),
+      // subtitle: Text('Quantity: ${transaction['quantity']}, Price: ${transaction['price']}'),
+    ),
+  );
+}
+
+
   void _showTransactionDialog(String transactionType) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(transactionType.toUpperCase() + ' Transaction'),
+        title: Text('${transactionType.toUpperCase()} Transaction'),
         content: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -110,7 +121,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
                   items: drinks.map((Drink drink) {
                     return DropdownMenuItem<Drink>(
                       value: drink,
-                      child: Text(drink.name),
+                      child: Text('${drink.name}(${drink.manufacturerName ?? "Unknown"})'),
                     );
                   }).toList(),
                   onChanged: (Drink? newValue) {
@@ -137,12 +148,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
                     },
                     validator: (value) => value == null ? 'Please select a purchaser' : null,
                   ),
-                TextFormField(
-                  controller: _unitController,
-                  decoration: InputDecoration(labelText: 'Unit'),
-                  keyboardType: TextInputType.number,
-                  validator: (value) => value?.isEmpty ?? true ? 'Please enter unit' : null,
-                ),
                 TextFormField(
                   controller: _quantityController,
                   decoration: InputDecoration(labelText: 'Quantity'),
@@ -185,36 +190,35 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
   void _saveTransaction(String transactionType) async {
     if (_formKey.currentState?.validate() ?? false) {
-      final drinkRepository = DrinkRepository();
-
-      final transaction = Transaction(
-        id: DateTime.now().millisecondsSinceEpoch,
-        drinkId: _selectedDrink!.id,
-        quantity: int.parse(_quantityController.text),
-        price: double.parse(_priceController.text),
-        transactionType: transactionType,
-        transactionDate: DateTime.now(),
-        purchaserId: transactionType == 'out' ? _selectedPurchaser?.id : null,
-        manufacturerId: transactionType == 'in' ? _selectedDrink!.manufacturerId : null,
-      );
-
       if (transactionType == 'in') {
-        await drinkRepository.insertInTransaction(transaction);
+        final transaction = InTransaction(
+          id: DateTime.now().millisecondsSinceEpoch,
+          drinkId: _selectedDrink!.id,
+          quantity: int.parse(_quantityController.text),
+          price: double.parse(_priceController.text),
+          transactionDate: DateTime.now(),
+        );
+        await transactionRepository.insertInTransaction(transaction);
       } else {
-        await drinkRepository.insertOutTransaction(transaction);
+        final transaction = OutTransaction(
+          id: DateTime.now().millisecondsSinceEpoch,
+          drinkId: _selectedDrink!.id,
+          quantity: int.parse(_quantityController.text),
+          price: double.parse(_priceController.text),
+          purchaserId: _selectedPurchaser!.id,
+          transactionDate: DateTime.now(),
+        );
+        await transactionRepository.insertOutTransaction(transaction);
       }
 
-      setState(() {
-        transactions.add(transaction);
-      });
-
+      await _loadTransactions(); // Refresh transaction list
+      setState(() {});
       Navigator.pop(context);
       _clearForm();
     }
   }
 
   void _clearForm() {
-    _unitController.clear();
     _priceController.clear();
     _quantityController.clear();
     _selectedDrink = null;
@@ -223,7 +227,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
   @override
   void dispose() {
-    _unitController.dispose();
     _priceController.dispose();
     _quantityController.dispose();
     super.dispose();
