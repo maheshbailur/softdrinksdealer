@@ -1,10 +1,10 @@
 class Drink {
   final int id;
   final String name;
-  final int stock; // Current stock
+  final int stock;
   final String category;
-  final int? manufacturerId; // Foreign key to Manufacturers table
-  final String? manufacturerName;
+  final int? manufacturerId;
+  final String? manufacturerName; // This will be used for display only, not storage
 
   Drink({
     required this.id,
@@ -15,6 +15,7 @@ class Drink {
     this.manufacturerName,
   });
 
+  // Modified toMap to exclude manufacturer_name
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -22,18 +23,18 @@ class Drink {
       'stock': stock,
       'category': category,
       'manufacturer_id': manufacturerId,
-      'manufacturer_name': manufacturerName,
+      // Remove manufacturer_name as it's not in the database
     };
   }
 
   factory Drink.fromMap(Map<String, dynamic> map) {
     return Drink(
-      id: map['id'] ?? 0, // Ensure 'id' is not null
-      name: map['name'] ?? "Unknown", // ✅ Prevent null string issue
-      category: map['category'] ?? "Uncategorized", // ✅ Default category
-      stock: map['stock'] ?? 0, // ✅ Default stock to 0
-      manufacturerId: map['manufacturer_id'], // Nullable, so no default needed
-      manufacturerName: map['manufacturer_name'] ?? "Unknown Manufacturer",
+      id: map['id'] ?? 0,
+      name: map['name'] ?? "Unknown",
+      category: map['category'] ?? "Uncategorized",
+      stock: map['stock'] ?? 0,
+      manufacturerId: map['manufacturer_id'],
+      manufacturerName: map['manufacturer_name'], // Keep this for JOIN queries
     );
   }
 

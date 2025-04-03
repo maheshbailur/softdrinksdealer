@@ -6,16 +6,6 @@ class DrinkRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
   // Get all drinks
-  // Future<List<Drink>> getAllDrinks() async {
-  //   final db = await _dbHelper.database;
-  //   final List<Map<String, dynamic>> maps = await db.query('Drinks');
-
-  //   print("Drinks: $maps");
-  //   return List.generate(maps.length, (i) {
-  //     return Drink.fromMap(maps[i]);
-  //   });
-  // }
-
   Future<List<Drink>> getAllDrinks() async {
     final db = await DatabaseHelper.instance.database;
 
@@ -28,19 +18,31 @@ class DrinkRepository {
     return List.generate(maps.length, (i) => Drink.fromMap(maps[i]));
   }
 
-
   // Add a new drink
   Future<int> insertDrink(Drink drink) async {
     final db = await _dbHelper.database;
-    return await db.insert('Drinks', drink.toMap());
+    // Remove manufacturer_name from the insertion
+    final drinkMap = {
+      'name': drink.name,
+      'category': drink.category,
+      'stock': drink.stock,
+      'manufacturer_id': drink.manufacturerId,
+    };
+    return await db.insert('Drinks', drinkMap);
   }
 
   // Update an existing drink
   Future<int> updateDrink(Drink drink) async {
     final db = await _dbHelper.database;
+    final drinkMap = {
+      'name': drink.name,
+      'category': drink.category,
+      'stock': drink.stock,
+      'manufacturer_id': drink.manufacturerId,
+    };
     return await db.update(
       'Drinks',
-      drink.toMap(),
+      drinkMap,
       where: 'id = ?',
       whereArgs: [drink.id],
     );
@@ -68,7 +70,6 @@ class DrinkRepository {
       whereArgs: [drinkId],
     );
   }
-
 
   // Delete a drink
   Future<int> deleteDrink(int id) async {
