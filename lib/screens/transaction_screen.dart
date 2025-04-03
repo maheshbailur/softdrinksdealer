@@ -6,6 +6,7 @@ import '../models/drink.dart';
 import '../models/purchaser.dart';
 import '../repositories/transactions_repository.dart';
 import '../repositories/drink_repository.dart';
+import '../repositories/purchaser_repository.dart'; // Import PurchaserRepository
 
 class TransactionScreen extends StatefulWidget {
   @override
@@ -25,6 +26,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
   final transactionRepository = TransactionRepository();
   final drinkRepository = DrinkRepository();
+  final _purchaserRepository = PurchaserRepository(); // Initialize PurchaserRepository
 
   @override
   void initState() {
@@ -32,6 +34,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
     _transactions = []; // Initialize with an empty list
     _loadTransactions(); // Load data
     _loadDrinks(); // Load drinks
+    _loadPurchasers(); // Load purchasers
   }
 
   Future<void> _loadDrinks() async {
@@ -39,6 +42,12 @@ class _TransactionScreenState extends State<TransactionScreen> {
     setState(() {}); // Refresh UI after fetching data
   }
 
+  Future<void> _loadPurchasers() async {
+    final loadedPurchasers = await _purchaserRepository.getAllPurchasers();
+    setState(() {
+      purchasers = loadedPurchasers;
+    });
+  }
 
   Future<void> _loadTransactions() async {
     final transactions = await transactionRepository.getTodayTransactions();
@@ -56,7 +65,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
     print("Transactions after sorting: $_transactions");
     print("Rebuilding UI with transactions count: ${_transactions.length}");
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -92,17 +100,15 @@ class _TransactionScreenState extends State<TransactionScreen> {
     );
   }
 
-
-Widget _buildTransactionCard(Map<String, dynamic> transaction, String type) {
-  return Card(
-    margin: EdgeInsets.all(8),
-    child: ListTile(
-      title: Text('$type [${transaction['drink_name']}-${transaction['manufacturer_name'] ?? 'Unknown'}] Qty: ${transaction['quantity']}, Price: ${transaction['price']}'),
-      // subtitle: Text('Quantity: ${transaction['quantity']}, Price: ${transaction['price']}'),
-    ),
-  );
-}
-
+  Widget _buildTransactionCard(Map<String, dynamic> transaction, String type) {
+    return Card(
+      margin: EdgeInsets.all(8),
+      child: ListTile(
+        title: Text('$type [${transaction['drink_name']}-${transaction['manufacturer_name'] ?? 'Unknown'}] Qty: ${transaction['quantity']}, Price: ${transaction['price']}'),
+        // subtitle: Text('Quantity: ${transaction['quantity']}, Price: ${transaction['price']}'),
+      ),
+    );
+  }
 
   void _showTransactionDialog(String transactionType) {
     showDialog(
@@ -121,7 +127,7 @@ Widget _buildTransactionCard(Map<String, dynamic> transaction, String type) {
                   items: drinks.map((Drink drink) {
                     return DropdownMenuItem<Drink>(
                       value: drink,
-                      child: Text('${drink.name}(${drink.manufacturerName ?? "Unknown"})'),
+                      child: Text('${drink.name} (${drink.manufacturerName ?? "Unknown"})'),
                     );
                   }).toList(),
                   onChanged: (Drink? newValue) {
@@ -135,16 +141,45 @@ Widget _buildTransactionCard(Map<String, dynamic> transaction, String type) {
                   DropdownButtonFormField<Purchaser>(
                     value: _selectedPurchaser,
                     decoration: InputDecoration(labelText: 'Purchaser'),
-                    items: purchasers.map((Purchaser purchaser) {
-                      return DropdownMenuItem<Purchaser>(
-                        value: purchaser,
-                        child: Text(purchaser.name),
-                      );
-                    }).toList(),
-                    onChanged: (Purchaser? newValue) {
-                      setState(() {
-                        _selectedPurchaser = newValue;
-                      });
+                    items: [
+                      ...purchasers.map((Purchaser purchaser) {
+                        return DropdownMenuItem<Purchaser>(
+                          value: purchaser,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(purchaser.name),
+                              IconButton(
+                                icon: Icon(Icons.close, size: 16),
+                                padding: EdgeInsets.zero,
+                                constraints: BoxConstraints(),
+                                onPressed: () {
+                                  _deletePurchaser(purchaser);
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      DropdownMenuItem<Purchaser>(
+                        value: null,
+                        child: Text('+ Add New Purchaser'),
+                      ),
+                    ],
+                    onChanged: (Purchaser? newValue) async {
+                      if (newValue == null) {
+                        Purchaser? newPurchaser = await _showAddPurchaserDialog(); // Declare the variable here
+                        if (newPurchaser != null) {
+                          setState(() {
+                            purchasers.add(newPurchaser); // Add to the list of purchasers
+                            _selectedPurchaser = newPurchaser; // Update selected purchaser
+                          });
+                        }
+                      } else {
+                        setState(() {
+                          _selectedPurchaser = newValue;
+                        });
+                      }
                     },
                     validator: (value) => value == null ? 'Please select a purchaser' : null,
                   ),
@@ -223,6 +258,96 @@ Widget _buildTransactionCard(Map<String, dynamic> transaction, String type) {
     _quantityController.clear();
     _selectedDrink = null;
     _selectedPurchaser = null;
+  }
+
+  Future<Purchaser?> _showAddPurchaserDialog() async {
+    final nameController = TextEditingController();
+    final contactController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    return showDialog<Purchaser>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add New Purchaser'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: InputDecoration(labelText: 'Purchaser Name'),
+                validator: (value) => 
+                  value?.isEmpty ?? true ? 'Please enter name' : null,
+              ),
+              TextFormField(
+                controller: contactController,
+                decoration: InputDecoration(labelText: 'Contact Info'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (formKey.currentState?.validate() ?? false) {
+                try {
+                  final id = await _purchaserRepository.insertPurchaser(
+                    nameController.text,
+                    contactController.text,
+                  );
+                  
+                  if (id != -1) {
+                    final purchaser = Purchaser(
+                      id: id,
+                      name: nameController.text,
+                      contactInfo: contactController.text,
+                    );
+                    Navigator.pop(context, purchaser);
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error adding purchaser: $e')),
+                  );
+                }
+              }
+            },
+            child: Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deletePurchaser(Purchaser purchaser) async {
+    final isInUse = await _isPurchaserInUse(purchaser.id);
+    
+    if (isInUse) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cannot delete purchaser that is in use'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    await _purchaserRepository.deletePurchaser(purchaser.id);
+    setState(() {
+      purchasers.removeWhere((m) => m.id == purchaser.id);
+      if (_selectedPurchaser?.id == purchaser.id) {
+        _selectedPurchaser = null;
+      }
+    });
+  }
+
+  Future<bool> _isPurchaserInUse(int purchaserId) async {
+    final transactions = await transactionRepository.getTransactionsByPurchaser(purchaserId);
+    return transactions.isNotEmpty;
   }
 
   @override

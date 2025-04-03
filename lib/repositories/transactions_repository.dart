@@ -111,4 +111,13 @@ class TransactionRepository {
     return transactions;
   }
 
+  Future<List<Map<String, dynamic>>> getTransactionsByPurchaser(int purchaserId) async {
+    final db = await DatabaseHelper.instance.database;
+    return await db.query(
+      'OUT_Transactions',
+      where: 'purchaser_id = ?',
+      whereArgs: [purchaserId],
+    );
+  }
+
 }
