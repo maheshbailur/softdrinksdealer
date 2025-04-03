@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../repositories/drink_repository.dart';
 import '../repositories/transactions_repository.dart';
+import '../database/database_helper.dart';
 // import '../models/drink.dart';
-// import '../models/in_transaction.dart';
+// import '../models/in_transaction.dart;
 // import '../models/out_transaction.dart';
 import 'package:intl/intl.dart';
 
@@ -44,7 +45,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final todayOutTransactions = await _transactionRepository
           .getOutTransactionsByDateRange(todayStart, todayEnd);
       _todaySales = todayOutTransactions.fold(
-          0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
+          0.0, (sum, transaction) => sum + transaction.price);
+          // 0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
 
       // Get today's IN transactions (purchases)
       final todayInTransactions = await _transactionRepository
@@ -60,19 +62,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final monthlyOutTransactions = await _transactionRepository
           .getOutTransactionsByDateRange(monthStart, monthEnd);
       _monthlyRevenue = monthlyOutTransactions.fold(
-          0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
+          0.0, (sum, transaction) => sum + transaction.price);
+          // 0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
 
       // Get monthly IN transactions
       final monthlyInTransactions = await _transactionRepository
           .getInTransactionsByDateRange(monthStart, monthEnd);
       _monthlyExpenses = monthlyInTransactions.fold(
-          0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
+          // 0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
+          0.0, (sum, transaction) => sum + transaction.price);
 
       setState(() => _isLoading = false);
     } catch (e) {
       print('Error loading dashboard data: $e');
       setState(() => _isLoading = false);
       _showError('Failed to load dashboard data');
+    }
+  }
+
+  Future<void> _resetAllData() async {
+    try {
+      bool? shouldReset = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Reset All Data'),
+            content: Text('This will delete all data from all tables. Are you sure?'),
+            actions: [
+              TextButton(
+                child: Text('Cancel'),
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+              TextButton(
+                child: Text(
+                  'Reset',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (shouldReset == true && mounted) {
+        await DatabaseHelper.instance.clearTables();
+        await _loadDashboardData(); // Reload dashboard data
+        
+        if (mounted) {  // Check if widget is still mounted before showing SnackBar
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('All data has been reset'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error resetting data: $e');
+      if (mounted) {  // Check if widget is still mounted before showing error
+        _showError('Failed to reset data');
+      }
     }
   }
 
@@ -106,6 +156,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             icon: Icon(Icons.refresh),
             onPressed: _loadDashboardData,
+          ),
+          IconButton(
+            icon: Icon(Icons.delete_forever),
+            color: Colors.red,
+            onPressed: _resetAllData,
+            tooltip: 'Reset All Data',
           ),
         ],
       ),
