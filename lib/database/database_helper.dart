@@ -105,8 +105,8 @@ class DatabaseHelper {
     await db.delete('OUT_Transactions');
     await db.delete('IN_Transactions');
     await db.delete('Drinks');
-    await db.delete('Purchasers');
-    await db.delete('Manufacturers');
+    // await db.delete('Purchasers');
+    // await db.delete('Manufacturers');
   }
 
   // Add method to close database
