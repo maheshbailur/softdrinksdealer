@@ -5,6 +5,7 @@ import '../repositories/transactions_repository.dart';
 import '../models/drink.dart';
 import '../models/in_transaction.dart';
 import '../models/out_transaction.dart';
+import 'dart:math' show pi;
 
 class ReportsScreen extends StatefulWidget {
   @override
@@ -53,8 +54,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
         await _transactionRepository.getOutTransactionsByDateRange(startDate, endDate);
 
     // Calculate financial metrics
-    // _totalExpenses = inTransactions.fold(0, (sum, tr) => sum + (tr.price * tr.quantity));
-    // _totalRevenue = outTransactions.fold(0, (sum, tr) => sum + (tr.price * tr.quantity));
     _totalExpenses = inTransactions.fold(0, (sum, tr) => sum + tr.price);
     _totalRevenue = outTransactions.fold(0, (sum, tr) => sum + tr.price);
     _netProfit = _totalRevenue - _totalExpenses;
@@ -100,18 +99,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
   List<FlSpot> _createSalesSpots(List<OutTransaction> transactions) {
     if (transactions.isEmpty) return [FlSpot(0, 0)];
 
-    Map<int, double> dailySales = {};
+    Map<DateTime, double> dailySales = {};
     DateTime startDate = _getStartDate();
-    int totalDays = DateTime.now().difference(startDate).inDays;
+    DateTime endDate = DateTime.now();
 
-    for (var tr in transactions) {
-      int daysDiff = tr.transactionDate.difference(startDate).inDays;
-      dailySales[daysDiff] = (dailySales[daysDiff] ?? 0) + (tr.price * tr.quantity);
+    // Initialize all dates in the range with 0
+    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+      dailySales[startDate.add(Duration(days: i))] = 0;
     }
 
+    // Add sales data
+    for (var tr in transactions) {
+      if (tr.transactionDate.isAfter(startDate) && 
+          tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+        dailySales[DateTime(
+          tr.transactionDate.year,
+          tr.transactionDate.month,
+          tr.transactionDate.day,
+        )] = (dailySales[tr.transactionDate] ?? 0) + tr.price;
+      }
+    }
+
+    // Convert to list of spots
     List<FlSpot> spots = [];
-    for (int i = 0; i <= totalDays; i++) {
-      spots.add(FlSpot(i.toDouble(), dailySales[i] ?? 0));
+    var sortedDates = dailySales.keys.toList()..sort();
+    for (int i = 0; i < sortedDates.length; i++) {
+      spots.add(FlSpot(i.toDouble(), dailySales[sortedDates[i]] ?? 0));
     }
 
     return spots;
@@ -162,25 +175,115 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _buildSalesChart() {
-    return Container(
+    // Find min and max values for the Y axis
+    double maxY = _salesSpots.isEmpty ? 10 : 
+      _salesSpots.reduce((a, b) => a.y > b.y ? a : b).y;
+    maxY = (maxY * 1.2).ceilToDouble(); // Add 20% padding to max value
+
+    // Get period labels for X axis
+    String periodLabel = switch (_selectedPeriod) {
+      'week' => 'Days',
+      'month' => 'Days',
+      'quarter' => 'Weeks',
+      'year' => 'Months',
+      _ => 'Days'
+    };
+
+    return SizedBox(
       height: 300,
       child: LineChart(
         LineChartData(
-          gridData: FlGridData(show: true),
-          titlesData: FlTitlesData(show: true),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: true,
+            horizontalInterval: maxY / 5, // Show 5 horizontal grid lines
+            verticalInterval: 1,
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: maxY / 5,
+                reservedSize: 40,
+                getTitlesWidget: (value, meta) {
+                  return Text('₹${value.toStringAsFixed(0)}',
+                      style: const TextStyle(fontSize: 10));
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              axisNameWidget: Text(periodLabel),
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: _getXAxisInterval(),
+                getTitlesWidget: (value, meta) {
+                  return Transform.rotate(
+                    angle: _selectedPeriod == 'week' ? -45 * pi / 180 : 0,
+                    child: Text(
+                      _getXAxisLabel(value.toInt()),
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  );
+                },
+              ),
+            ),
+            rightTitles: AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+          ),
           borderData: FlBorderData(show: true),
+          minX: 0,
+          maxX: _salesSpots.isEmpty ? 10 : _salesSpots.length.toDouble() - 1,
+          minY: 0,
+          maxY: maxY,
           lineBarsData: [
             LineChartBarData(
               spots: _salesSpots,
               isCurved: true,
               color: Colors.blue,
               barWidth: 3,
-              dotData: FlDotData(show: true),
+              dotData: const FlDotData(show: true),
             ),
           ],
         ),
       ),
     );
+  }
+
+  double _getXAxisInterval() {
+    switch (_selectedPeriod) {
+      case 'week':
+        return 1; // Show every day
+      case 'month':
+        return 5; // Show every 5 days
+      case 'quarter':
+        return 7; // Show every week
+      case 'year':
+        return 30; // Show every month
+      default:
+        return 1;
+    }
+  }
+
+  String _getXAxisLabel(int value) {
+    DateTime startDate = _getStartDate();
+    switch (_selectedPeriod) {
+      case 'week':
+        final date = startDate.add(Duration(days: value));
+        return '${date.day}/${date.month}'; // Format: DD/MM
+      case 'month':
+        return 'D${value + 1}';
+      case 'quarter':
+        return 'W${(value / 7).ceil()}';
+      case 'year':
+        return 'M${(value / 30).ceil()}';
+      default:
+        return value.toString();
+    }
   }
 
   Widget _buildProfitLossCard() {
