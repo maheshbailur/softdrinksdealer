@@ -108,7 +108,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
         
         return DateTime(startYear, startMonth, 1);
       case 'year':
-        return DateTime(now.year - 1, now.month, now.day);
+        // Go back 5 years from current year (to show 6 years including current)
+        return DateTime(now.year - 5, 1, 1);
       default:
         return now.subtract(Duration(days: 7));
     }
@@ -180,6 +181,31 @@ class _ReportsScreenState extends State<ReportsScreen> {
       var sortedDates = monthlySales.keys.toList()..sort();
       for (int i = 0; i < sortedDates.length; i++) {
         spots.add(FlSpot(i.toDouble(), monthlySales[sortedDates[i]] ?? 0));
+      }
+      return spots;
+    } else if (_selectedPeriod == 'year') {
+      Map<int, double> yearlySales = {};
+      
+      // Initialize 6 years starting from startDate
+      for (int i = 0; i < 6; i++) {
+        int year = startDate.year + i;
+        yearlySales[year] = 0;
+      }
+
+      // Aggregate sales by year
+      for (var tr in transactions) {
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) && 
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          int year = tr.transactionDate.year;
+          yearlySales[year] = (yearlySales[year] ?? 0) + tr.price;
+        }
+      }
+
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedYears = yearlySales.keys.toList()..sort();
+      for (int i = 0; i < sortedYears.length; i++) {
+        spots.add(FlSpot(i.toDouble(), yearlySales[sortedYears[i]] ?? 0));
       }
       return spots;
     } else {
@@ -342,7 +368,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'quarter':
         return 1; // Show every quarter
       case 'year':
-        return 30; // Show every month
+        return 1; // Show every year
       default:
         return 1;
     }
@@ -372,8 +398,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                '${_getShortMonthName(quarterEndDate.month)}/'
                '${quarterStartDate.year.toString().substring(2)}';
       case 'year':
-        final date = DateTime(startDate.year, startDate.month + value);
-        return _getShortMonthName(date.month);
+        final year = startDate.year + value;
+        return year.toString();
       default:
         return value.toString();
     }
