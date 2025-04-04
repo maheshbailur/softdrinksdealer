@@ -1,12 +1,20 @@
+import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 // import '../models/drink.dart';
 import '../models/in_transaction.dart';
 import '../models/out_transaction.dart';
 import './drink_repository.dart';
+import 'package:provider/provider.dart';
+import '../providers/inventory_alert_provider.dart';
 
 class TransactionRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
-  final DrinkRepository _drinkRepository = DrinkRepository();
+  final DrinkRepository _drinkRepository = DrinkRepository.instance;
+
+  BuildContext? _context;
+  void setContext(BuildContext context) {
+    _context = context;
+  }
 
   // ✅ Insert IN Transaction
   Future<int> insertInTransaction(InTransaction transaction) async {
@@ -18,6 +26,11 @@ class TransactionRepository {
     if (result > 0) {
       // Update the stock of the drink
       await _drinkRepository.updateDrinkStock(transaction.drinkId, transaction.quantity);
+      // Update out of stock count after transaction
+      if (_context != null) {
+        await Provider.of<InventoryAlertProvider>(_context!, listen: false)
+            .updateOutOfStockCount();
+      }
     }
 
     return result;
@@ -31,6 +44,11 @@ class TransactionRepository {
     if (result > 0) {
       // Update the stock of the drink
       await _drinkRepository.updateDrinkStock(transaction.drinkId, -transaction.quantity);
+      // Update out of stock count after transaction
+      if (_context != null) {
+        await Provider.of<InventoryAlertProvider>(_context!, listen: false)
+            .updateOutOfStockCount();
+      }
     }
 
     return result;

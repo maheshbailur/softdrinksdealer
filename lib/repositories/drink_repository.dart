@@ -1,9 +1,21 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/inventory_alert_provider.dart';
 import '../database/database_helper.dart';
 import '../models/drink.dart';
-// import '../models/transaction.dart';
 
 class DrinkRepository {
+  static final DrinkRepository instance = DrinkRepository._internal();
+  factory DrinkRepository() => instance;
+  DrinkRepository._internal();
+
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  InventoryAlertProvider? _provider;
+
+  void setProvider(InventoryAlertProvider provider) {
+    _provider = provider;
+    print('Provider set in DrinkRepository singleton'); // Debug print
+  }
 
   // Get all drinks
   Future<List<Drink>> getAllDrinks() async {
@@ -49,26 +61,22 @@ class DrinkRepository {
   }
 
   // Update drink stock
-  Future<int> updateDrinkStock(int drinkId, int additionalStock) async {
+  Future<void> updateDrinkStock(int drinkId, int quantityChange) async {
     final db = await _dbHelper.database;
+    await db.rawUpdate('''
+      UPDATE Drinks 
+      SET stock = stock + ? 
+      WHERE id = ?
+    ''', [quantityChange, drinkId]);
 
-    // Fetch the existing drink details
-    Drink? drink = await getDrink(drinkId);
-    
-    if (drink == null) {
-      print("Drink not found with ID: $drinkId");
-      return 0; // Return 0 if drink doesn't exist
+    print('Stock updated for drink $drinkId by $quantityChange'); // Debug print
+
+    if (_provider != null) {
+      await _provider!.updateOutOfStockCount();
+      print('Provider notified of stock update'); // Debug print
+    } else {
+      print('Provider not available for stock update'); // Debug print
     }
-
-    int newStock = drink.stock + additionalStock; // Add new stock
-
-    // Update the stock in the database
-    return await db.update(
-      'Drinks',
-      {'stock': newStock},
-      where: 'id = ?',
-      whereArgs: [drinkId],
-    );
   }
 
   // Delete a drink

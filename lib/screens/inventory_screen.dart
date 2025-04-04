@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/drink.dart';
 import '../repositories/drink_repository.dart';
+import '../repositories/transactions_repository.dart';
 import '../repositories/manufacturer_repository.dart';
 import '../models/manufacturer.dart';
 import '../database/database_helper.dart';
+import 'package:provider/provider.dart';
+import '../providers/inventory_alert_provider.dart';
 
 class InventoryScreen extends StatefulWidget {
   @override
@@ -12,6 +15,7 @@ class InventoryScreen extends StatefulWidget {
 }
 
 class _InventoryScreenState extends State<InventoryScreen> {
+  final DrinkRepository _drinkRepository = DrinkRepository.instance;
   List<Drink> drinks = [];
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -20,9 +24,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _selectedCategory = 'Soft Drinks';
   final _unitController = TextEditingController();
   int? _selectedManufacturer;
-  // List<String> _manufacturers = [];
   List<Manufacturer> _manufacturers = [];
-
 
   final List<String> _categories = [
     'Soft Drinks',
@@ -34,8 +36,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   void initState() {
     super.initState();
-    _loadManufacturers();
     _loadDrinks();
+  }
+
+  Future<void> _loadDrinks() async {
+    try {
+      final loadedDrinks = await _drinkRepository.getAllDrinks();
+      setState(() {
+        drinks = loadedDrinks;
+      });
+    } catch (e) {
+      print('Error loading drinks: $e');
+    }
   }
 
   Future<void> _loadManufacturers() async {
@@ -46,18 +58,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
       });
     } catch (e) {
       print('Error loading manufacturers: \$e');
-    }
-  }
-
-  Future<void> _loadDrinks() async {
-    try {
-      // ✅ Fetch drinks using DrinkRepository
-      drinks = await DrinkRepository().getAllDrinks();
-      print("Drinks List: $drinks");
-
-      setState(() {}); // ✅ Refresh UI after fetching data
-    } catch (e) {
-      print('Error loading drinks: $e');
     }
   }
 
@@ -110,7 +110,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return result.isNotEmpty;
   }
 
-
   Future<void> _saveDrink() async {
     if (_formKey.currentState?.validate() ?? false) {
       try {
@@ -130,17 +129,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
 
+        // Update out of stock count after saving
+        Provider.of<InventoryAlertProvider>(context, listen: false)
+            .updateOutOfStockCount();
+        
         Navigator.pop(context);
         _clearForm();
-
-        // Refresh the drinks list
         await _loadDrinks();
       } catch (e) {
         print('Error saving drink: $e');
       }
     }
   }
-
 
   void _clearForm() {
     _nameController.clear();
@@ -154,10 +154,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
   void _editDrink(Drink drink) {
     // Implement edit functionality
     _nameController.text = drink.name;
-    // _selectedManufacturer = drink.manufacturerId.name;
-    // _purchasePriceController.text = drink.purchasePrice.toString();
-    // _selectedCategory = drink.category;
     _unitController.text = drink.stock.toString();
+
+    // Update out of stock count after editing
+    Provider.of<InventoryAlertProvider>(context, listen: false)
+        .updateOutOfStockCount();
 
     _showAddDrinkDialog();
   }
@@ -165,7 +166,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _loadDrinks(); // Ensure drinks list is refreshed when screen is revisited
+    _loadDrinks();
   }
 
   @override
@@ -266,14 +267,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   },
                   validator: (value) => (value == null || value == -1) ? 'Please select a manufacturer' : null,
                 ),
-                // Purchase Price Input (Stored in IN_Transactions)
-                // TextFormField(
-                //   controller: _purchasePriceController,
-                //   decoration: InputDecoration(labelText: 'Purchase Price'),
-                //   keyboardType: TextInputType.number,
-                //   validator: (value) =>
-                //       value?.isEmpty ?? true ? 'Please enter purchase price' : null,
-                // ),
 
                 // Category Dropdown
                 DropdownButtonFormField<String>(
@@ -374,5 +367,4 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
     );
   }
-
 }
