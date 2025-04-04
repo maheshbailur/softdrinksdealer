@@ -92,7 +92,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     DateTime now = DateTime.now();
     switch (_selectedPeriod) {
       case 'week':
-        return now.subtract(Duration(days: 7));
+        // Go back 7 days from today to show 8 days total (including today)
+        return DateTime(now.year, now.month, now.day - 7);
       case 'month':
         return DateTime(now.year, now.month - 6, 1);
       case 'quarter':
@@ -121,7 +122,41 @@ class _ReportsScreenState extends State<ReportsScreen> {
     DateTime startDate = _getStartDate();
     DateTime endDate = DateTime.now();
 
-    if (_selectedPeriod == 'quarter') {
+    if (_selectedPeriod == 'week') {
+      Map<DateTime, double> dailySales = {};
+      
+      // Initialize exactly 8 days (including today)
+      for (int i = 0; i < 8; i++) {
+        DateTime day = DateTime(
+          startDate.year,
+          startDate.month,
+          startDate.day + i,
+        );
+        dailySales[day] = 0;
+      }
+
+      // Add sales data
+      for (var tr in transactions) {
+        DateTime transactionDate = DateTime(
+          tr.transactionDate.year,
+          tr.transactionDate.month,
+          tr.transactionDate.day,
+        );
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) && 
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          dailySales[transactionDate] = (dailySales[transactionDate] ?? 0) + tr.price;
+        }
+      }
+
+      // Convert to list of spots
+      List<FlSpot> spots = [];
+      var sortedDates = dailySales.keys.toList()..sort();
+      for (int i = 0; i < sortedDates.length; i++) {
+        spots.add(FlSpot(i.toDouble(), dailySales[sortedDates[i]] ?? 0));
+      }
+
+      return spots;
+    } else if (_selectedPeriod == 'quarter') {
       Map<String, double> quarterSales = {};
       
       // Initialize 4 quarters starting from startDate
@@ -378,8 +413,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
     DateTime startDate = _getStartDate();
     switch (_selectedPeriod) {
       case 'week':
-        final date = startDate.add(Duration(days: value));
-        return '${date.day}/${_getShortMonthName(date.month)}'; // Format: DD/MMM
+        final date = DateTime(
+          startDate.year,
+          startDate.month,
+          startDate.day + value,
+        );
+        return '${date.day}/${_getShortMonthName(date.month)}';
       case 'month':
         final date = DateTime(startDate.year, startDate.month + value, 1);
         return _getShortMonthName(date.month);
