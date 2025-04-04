@@ -22,4 +22,14 @@ class ManufacturerRepository {
     final db = await DatabaseHelper.instance.database;
     await db.delete('Manufacturers', where: 'id = ?', whereArgs: [id]);
   }
+
+  Future<void> updateManufacturerName(int id, String newName) async {
+    final db = await DatabaseHelper.instance.database;
+    await db.update(
+      'Manufacturers',
+      {'name': newName},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
 }

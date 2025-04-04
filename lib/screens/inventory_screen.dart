@@ -152,15 +152,120 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _editDrink(Drink drink) {
-    // Implement edit functionality
     _nameController.text = drink.name;
+    _selectedCategory = drink.category;
+    _selectedManufacturer = drink.manufacturerId;
     _unitController.text = drink.stock.toString();
 
-    // Update out of stock count after editing
-    Provider.of<InventoryAlertProvider>(context, listen: false)
-        .updateOutOfStockCount();
+    String manufacturerName = drink.manufacturerName ?? 'Unknown';
 
-    _showAddDrinkDialog();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Modify Drink'),
+        content: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Name Field
+                TextFormField(
+                  controller: _nameController,
+                  decoration: InputDecoration(labelText: 'Name'),
+                  validator: (value) => value?.isEmpty ?? true ? 'Please enter name' : null,
+                ),
+
+                // Manufacturer Name (Editable)
+                TextFormField(
+                  initialValue: manufacturerName,
+                  decoration: InputDecoration(labelText: 'Manufacturer'),
+                  onChanged: (value) {
+                    manufacturerName = value;
+                  },
+                  validator: (value) => value?.isEmpty ?? true ? 'Please enter manufacturer name' : null,
+                ),
+
+                // Category Dropdown
+                DropdownButtonFormField<String>(
+                  value: _selectedCategory,
+                  decoration: InputDecoration(labelText: 'Category'),
+                  items: _categories.map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null) {
+                      setState(() {
+                        _selectedCategory = newValue;
+                      });
+                    }
+                  },
+                  validator: (value) => value == null ? 'Please select a category' : null,
+                ),
+
+                // Stock Display (Read-only)
+                TextFormField(
+                  controller: _unitController,
+                  enabled: false,
+                  decoration: InputDecoration(
+                    labelText: 'Current Stock',
+                    helperText: 'Stock can only be modified through transactions',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _clearForm();
+            },
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (_formKey.currentState?.validate() ?? false) {
+                try {
+                  // Update manufacturer name if changed
+                  if (manufacturerName != drink.manufacturerName) {
+                    await ManufacturerRepository().updateManufacturerName(
+                      drink.manufacturerId!,
+                      manufacturerName,
+                    );
+                  }
+
+                  final updatedDrink = Drink(
+                    id: drink.id,
+                    name: _nameController.text,
+                    manufacturerId: _selectedManufacturer,
+                    category: _selectedCategory,
+                    stock: drink.stock, // Keep existing stock
+                  );
+
+                  await _drinkRepository.updateDrink(updatedDrink);
+
+                  // Update out of stock count after editing
+                  Provider.of<InventoryAlertProvider>(context, listen: false)
+                      .updateOutOfStockCount();
+
+                  Navigator.pop(context);
+                  _clearForm();
+                  await _loadDrinks();
+                } catch (e) {
+                  print('Error updating drink: $e');
+                }
+              }
+            },
+            child: Text('Update'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -193,10 +298,23 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 final drink = drinks[index];
                 return Card(
                   margin: EdgeInsets.all(8),
+                  // Add color based on stock status
+                  color: drink.stock == 0 ? Color(0xFFE5D3B3) : null, // Light brown for zero stock
                   child: ListTile(
-                    title: Text(drink.name),
+                    title: Text(
+                      drink.name,
+                      style: TextStyle(
+                        fontWeight: drink.stock == 0 ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
                     subtitle: Text('${drink.manufacturerName} - ${drink.category}'),
-                    trailing: Text('${drink.stock}'),
+                    trailing: Text(
+                      '${drink.stock}',
+                      style: TextStyle(
+                        color: drink.stock == 0 ? Colors.red : null,
+                        fontWeight: drink.stock == 0 ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
                     onTap: () => _editDrink(drink),
                   ),
                 );
