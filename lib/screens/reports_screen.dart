@@ -22,6 +22,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   };
 
   String _selectedPeriod = 'week';
+  String _selectedGraphType = 'LINE'; // Default graph type
   final DrinkRepository _drinkRepository = DrinkRepository();
   final TransactionRepository _transactionRepository = TransactionRepository();
   
@@ -291,7 +292,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildPeriodSelector(),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 1, // Adjust flex to control width ratio
+                    child: _buildPeriodSelector(),
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    flex: 1, // Adjust flex to control width ratio
+                    child: _buildGraphTypeSelector(),
+                  ),
+                ],
+              ),
               SizedBox(height: 20),
               _buildSalesChart(),
               SizedBox(height: 20),
@@ -323,8 +336,36 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  Widget _buildGraphTypeSelector() {
+    return DropdownButton<String>(
+      value: _selectedGraphType,
+      items: ['LINE', 'BLOCK', 'PI'].map((String value) {
+        return DropdownMenuItem<String>(
+          value: value,
+          child: Text(value),
+        );
+      }).toList(),
+      onChanged: (String? newValue) {
+        setState(() {
+          _selectedGraphType = newValue!;
+        });
+      },
+    );
+  }
+
   Widget _buildSalesChart() {
-    // Find min and max values for the Y axis
+    switch (_selectedGraphType) {
+      case 'BLOCK':
+        return _buildBarChart();
+      case 'PI':
+        return _buildPieChart();
+      case 'LINE':
+      default:
+        return _buildLineChart();
+    }
+  }
+
+  Widget _buildLineChart() {
     double maxY = _salesSpots.isEmpty ? 10 : 
       _salesSpots.reduce((a, b) => a.y > b.y ? a : b).y;
     maxY = (maxY * 1.2).ceilToDouble(); // Add 20% padding to max value
@@ -391,6 +432,124 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildBarChart() {
+    return SizedBox(
+      height: 300,
+      child: BarChart(
+        BarChartData(
+          barGroups: _salesSpots.map((spot) {
+            return BarChartGroupData(
+              x: spot.x.toInt(),
+              barRods: [
+                BarChartRodData(
+                  toY: spot.y,
+                  color: Colors.blue,
+                  width: 15,
+                ),
+              ],
+            );
+          }).toList(),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (value, meta) {
+                  return Text('₹${value.toStringAsFixed(0)}',
+                      style: const TextStyle(fontSize: 10));
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              axisNameWidget: periodLabels[_selectedPeriod] ?? const Text('Days'),
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: _getXAxisInterval(),
+                getTitlesWidget: (value, meta) {
+                  return Transform.rotate(
+                    angle: _selectedPeriod == 'week' ? -45 * pi / 180 : 0,
+                    child: Text(
+                      _getXAxisLabel(value.toInt()),
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPieChart() {
+    double total = _salesSpots.fold(0, (sum, spot) => sum + spot.y);
+    List<PieChartSectionData> sections = [];
+    List<Widget> legendItems = [];
+
+    for (int i = 0; i < _salesSpots.length; i++) {
+      final spot = _salesSpots[i];
+      if (spot.y == 0) continue; // Skip indices with no value
+
+      double percentage = (spot.y / total) * 100;
+      Color color = Colors.primaries[i % Colors.primaries.length];
+
+      // Add section to the pie chart
+      sections.add(PieChartSectionData(
+        value: spot.y,
+        title: '${percentage.toStringAsFixed(1)}%',
+        color: color,
+        radius: 50,
+      ));
+
+      // Add corresponding legend item
+      DateTime startDate = _getStartDate();
+      String dateLabel = _selectedPeriod == 'week'
+          ? '${startDate.add(Duration(days: i)).day}/${_getShortMonthName(startDate.month)}'
+          : _getXAxisLabel(i);
+
+      legendItems.add(Row(
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            color: color,
+          ),
+          SizedBox(width: 8),
+          Text(dateLabel, style: TextStyle(fontSize: 12)),
+        ],
+      ));
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 300,
+          child: PieChart(
+            PieChartData(
+              sections: sections,
+              sectionsSpace: 2,
+              centerSpaceRadius: 40,
+            ),
+          ),
+        ),
+        SizedBox(height: 20),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4, // 4 columns
+            childAspectRatio: 3, // Adjust height-to-width ratio
+          ),
+          itemCount: legendItems.length,
+          itemBuilder: (context, index) {
+            return legendItems[index];
+          },
+        ),
+      ],
     );
   }
 
