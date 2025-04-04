@@ -305,9 +305,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   ),
                 ],
               ),
-              SizedBox(height: 20),
+              SizedBox(height: 10), // Reduce gap between dropdowns and chart
               _buildSalesChart(),
-              SizedBox(height: 20),
+              SizedBox(height: 10), // Reduce gap between chart and index
               _buildProfitLossCard(),
               SizedBox(height: 20),
               _buildInventorySummary(),
@@ -502,7 +502,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         value: spot.y,
         title: '${percentage.toStringAsFixed(1)}%',
         color: color,
-        radius: 50,
+        radius: 100,
       ));
 
       // Add corresponding legend item
@@ -536,7 +536,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
           ),
         ),
-        SizedBox(height: 20),
+        SizedBox(height: 10), // Reduce gap between chart and index
         GridView.builder(
           shrinkWrap: true,
           physics: NeverScrollableScrollPhysics(),
