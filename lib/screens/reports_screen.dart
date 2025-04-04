@@ -13,6 +13,14 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
+  // Add these constant widgets
+  static const Map<String, Widget> periodLabels = {
+    'week': Text('Days', style: TextStyle(fontSize: 12)),
+    'month': Text('Months', style: TextStyle(fontSize: 12)),
+    'quarter': Text('Weeks', style: TextStyle(fontSize: 12)),
+    'year': Text('Months', style: TextStyle(fontSize: 12)),
+  };
+
   String _selectedPeriod = 'week';
   final DrinkRepository _drinkRepository = DrinkRepository();
   final TransactionRepository _transactionRepository = TransactionRepository();
@@ -86,7 +94,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'week':
         return now.subtract(Duration(days: 7));
       case 'month':
-        return DateTime(now.year, now.month - 1, now.day);
+        return DateTime(now.year, now.month - 6, 1); // Go back 6 months, start from 1st
       case 'quarter':
         return DateTime(now.year, now.month - 3, now.day);
       case 'year':
@@ -99,35 +107,61 @@ class _ReportsScreenState extends State<ReportsScreen> {
   List<FlSpot> _createSalesSpots(List<OutTransaction> transactions) {
     if (transactions.isEmpty) return [FlSpot(0, 0)];
 
-    Map<DateTime, double> dailySales = {};
+    Map<DateTime, double> monthlySales = {};
     DateTime startDate = _getStartDate();
     DateTime endDate = DateTime.now();
 
-    // Initialize all dates in the range with 0
-    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
-      dailySales[startDate.add(Duration(days: i))] = 0;
-    }
-
-    // Add sales data
-    for (var tr in transactions) {
-      if (tr.transactionDate.isAfter(startDate) && 
-          tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
-        dailySales[DateTime(
-          tr.transactionDate.year,
-          tr.transactionDate.month,
-          tr.transactionDate.day,
-        )] = (dailySales[tr.transactionDate] ?? 0) + tr.price;
+    if (_selectedPeriod == 'month') {
+      // Initialize monthly buckets
+      for (int i = 0; i <= 5; i++) {
+        DateTime monthDate = DateTime(startDate.year, startDate.month + i, 1);
+        monthlySales[monthDate] = 0;
       }
-    }
 
-    // Convert to list of spots
-    List<FlSpot> spots = [];
-    var sortedDates = dailySales.keys.toList()..sort();
-    for (int i = 0; i < sortedDates.length; i++) {
-      spots.add(FlSpot(i.toDouble(), dailySales[sortedDates[i]] ?? 0));
-    }
+      // Aggregate sales by month
+      for (var tr in transactions) {
+        DateTime monthStart = DateTime(tr.transactionDate.year, tr.transactionDate.month, 1);
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) && 
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          monthlySales[monthStart] = (monthlySales[monthStart] ?? 0) + tr.price;
+        }
+      }
 
-    return spots;
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedDates = monthlySales.keys.toList()..sort();
+      for (int i = 0; i < sortedDates.length; i++) {
+        spots.add(FlSpot(i.toDouble(), monthlySales[sortedDates[i]] ?? 0));
+      }
+      return spots;
+    } else {
+      Map<DateTime, double> dailySales = {};
+      // Initialize all dates in the range with 0
+      for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+        dailySales[startDate.add(Duration(days: i))] = 0;
+      }
+
+      // Add sales data
+      for (var tr in transactions) {
+        if (tr.transactionDate.isAfter(startDate) && 
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          dailySales[DateTime(
+            tr.transactionDate.year,
+            tr.transactionDate.month,
+            tr.transactionDate.day,
+          )] = (dailySales[tr.transactionDate] ?? 0) + tr.price;
+        }
+      }
+
+      // Convert to list of spots
+      List<FlSpot> spots = [];
+      var sortedDates = dailySales.keys.toList()..sort();
+      for (int i = 0; i < sortedDates.length; i++) {
+        spots.add(FlSpot(i.toDouble(), dailySales[sortedDates[i]] ?? 0));
+      }
+
+      return spots;
+    }
   }
 
   @override
@@ -180,15 +214,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
       _salesSpots.reduce((a, b) => a.y > b.y ? a : b).y;
     maxY = (maxY * 1.2).ceilToDouble(); // Add 20% padding to max value
 
-    // Get period labels for X axis
-    String periodLabel = switch (_selectedPeriod) {
-      'week' => 'Days',
-      'month' => 'Days',
-      'quarter' => 'Weeks',
-      'year' => 'Months',
-      _ => 'Days'
-    };
-
     return SizedBox(
       height: 300,
       child: LineChart(
@@ -213,7 +238,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
             ),
             bottomTitles: AxisTitles(
-              axisNameWidget: Text(periodLabel),
+              axisNameWidget: periodLabels[_selectedPeriod] ?? const Text('Days'),
               sideTitles: SideTitles(
                 showTitles: true,
                 interval: _getXAxisInterval(),
@@ -259,7 +284,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'week':
         return 1; // Show every day
       case 'month':
-        return 5; // Show every 5 days
+        return 1; // Show every month
       case 'quarter':
         return 7; // Show every week
       case 'year':
@@ -274,16 +299,26 @@ class _ReportsScreenState extends State<ReportsScreen> {
     switch (_selectedPeriod) {
       case 'week':
         final date = startDate.add(Duration(days: value));
-        return '${date.day}/${date.month}'; // Format: DD/MM
+        return '${date.day}/${_getShortMonthName(date.month)}'; // Format: DD/MMM
       case 'month':
-        return 'D${value + 1}';
+        final date = DateTime(startDate.year, startDate.month + value, 1);
+        return _getShortMonthName(date.month);
       case 'quarter':
         return 'W${(value / 7).ceil()}';
       case 'year':
-        return 'M${(value / 30).ceil()}';
+        final date = DateTime(startDate.year, startDate.month + value);
+        return _getShortMonthName(date.month);
       default:
         return value.toString();
     }
+  }
+
+  String _getShortMonthName(int month) {
+    const monthNames = {
+      1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
+      7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
+    };
+    return monthNames[month] ?? '';
   }
 
   Widget _buildProfitLossCard() {
