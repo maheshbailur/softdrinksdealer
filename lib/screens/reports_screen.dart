@@ -17,8 +17,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   static const Map<String, Widget> periodLabels = {
     'week': Text('Days', style: TextStyle(fontSize: 12)),
     'month': Text('Months', style: TextStyle(fontSize: 12)),
-    'quarter': Text('Weeks', style: TextStyle(fontSize: 12)),
-    'year': Text('Months', style: TextStyle(fontSize: 12)),
+    'quarter': Text('Quarters', style: TextStyle(fontSize: 12)),
+    'year': Text('Years', style: TextStyle(fontSize: 12)),
   };
 
   String _selectedPeriod = 'week';
@@ -94,9 +94,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'week':
         return now.subtract(Duration(days: 7));
       case 'month':
-        return DateTime(now.year, now.month - 6, 1); // Go back 6 months, start from 1st
+        return DateTime(now.year, now.month - 6, 1);
       case 'quarter':
-        return DateTime(now.year, now.month - 3, now.day);
+        // For 4/4/2025, we want to start from Q3 2024
+        int currentQuarter = ((now.month - 1) ~/ 3);
+        int startYear = now.year;
+        int startMonth = (currentQuarter * 3) + 1 - 9; // Go back 3 quarters
+
+        if (startMonth <= 0) {
+          startMonth += 12;
+          startYear--;
+        }
+        
+        return DateTime(startYear, startMonth, 1);
       case 'year':
         return DateTime(now.year - 1, now.month, now.day);
       default:
@@ -107,11 +117,49 @@ class _ReportsScreenState extends State<ReportsScreen> {
   List<FlSpot> _createSalesSpots(List<OutTransaction> transactions) {
     if (transactions.isEmpty) return [FlSpot(0, 0)];
 
-    Map<DateTime, double> monthlySales = {};
     DateTime startDate = _getStartDate();
     DateTime endDate = DateTime.now();
 
-    if (_selectedPeriod == 'month') {
+    if (_selectedPeriod == 'quarter') {
+      Map<String, double> quarterSales = {};
+      
+      // Initialize 4 quarters starting from startDate
+      for (int i = 0; i < 4; i++) {
+        DateTime quarterDate = DateTime(
+          startDate.year, 
+          startDate.month + (i * 3), 
+          1
+        );
+        // Handle year transition
+        if (quarterDate.month > 12) {
+          quarterDate = DateTime(
+            quarterDate.year + 1, 
+            quarterDate.month - 12, 
+            1
+          );
+        }
+        String quarterKey = _getQuarterKey(quarterDate);
+        quarterSales[quarterKey] = 0;
+      }
+
+      // Aggregate sales by quarter
+      for (var tr in transactions) {
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) && 
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          String quarterKey = _getQuarterKey(tr.transactionDate);
+          quarterSales[quarterKey] = (quarterSales[quarterKey] ?? 0) + tr.price;
+        }
+      }
+
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedQuarters = quarterSales.keys.toList()..sort();
+      for (int i = 0; i < sortedQuarters.length; i++) {
+        spots.add(FlSpot(i.toDouble(), quarterSales[sortedQuarters[i]] ?? 0));
+      }
+      return spots;
+    } else if (_selectedPeriod == 'month') {
+      Map<DateTime, double> monthlySales = {};
       // Initialize monthly buckets
       for (int i = 0; i <= 5; i++) {
         DateTime monthDate = DateTime(startDate.year, startDate.month + i, 1);
@@ -162,6 +210,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
       return spots;
     }
+  }
+
+  String _getQuarterKey(DateTime date) {
+    int year = date.year;
+    int quarter = ((date.month - 1) ~/ 3) + 1;
+    return '$year-Q$quarter';
   }
 
   @override
@@ -286,7 +340,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'month':
         return 1; // Show every month
       case 'quarter':
-        return 7; // Show every week
+        return 1; // Show every quarter
       case 'year':
         return 30; // Show every month
       default:
@@ -304,7 +358,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
         final date = DateTime(startDate.year, startDate.month + value, 1);
         return _getShortMonthName(date.month);
       case 'quarter':
-        return 'W${(value / 7).ceil()}';
+        final quarterStartDate = DateTime(
+          startDate.year, 
+          startDate.month + (value * 3), 
+          1
+        );
+        final quarterEndDate = DateTime(
+          quarterStartDate.year, 
+          quarterStartDate.month + 2, 
+          1
+        );
+        return '${_getShortMonthName(quarterStartDate.month)}-'
+               '${_getShortMonthName(quarterEndDate.month)}/'
+               '${quarterStartDate.year.toString().substring(2)}';
       case 'year':
         final date = DateTime(startDate.year, startDate.month + value);
         return _getShortMonthName(date.month);
