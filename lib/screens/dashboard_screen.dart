@@ -144,6 +144,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return indianRupeesFormat.format(amount);
   }
 
+  Future<void> _handleImport() async {
+    // Implement import functionality here
+    print('Import functionality triggered');
+  }
+
+  Future<void> _handleBackup() async {
+    // Implement backup functionality here
+    print('Backup functionality triggered');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -156,6 +166,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             icon: Icon(Icons.refresh),
             onPressed: _loadDashboardData,
+          ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.import_export),
+            tooltip: 'Import/Backup',
+            onSelected: (value) async {
+              switch (value) {
+                case 'import':
+                  await _handleImport();
+                  break;
+                case 'backup':
+                  await _handleBackup();
+                  break;
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              PopupMenuItem<String>(
+                value: 'import',
+                child: Row(
+                  children: [
+                    Icon(Icons.upload_file, color: Colors.blue),
+                    SizedBox(width: 8),
+                    Text('Import Data'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'backup',
+                child: Row(
+                  children: [
+                    Icon(Icons.backup, color: Colors.green),
+                    SizedBox(width: 8),
+                    Text('Backup Data'),
+                  ],
+                ),
+              ),
+            ],
           ),
           IconButton(
             icon: Icon(Icons.delete_forever),

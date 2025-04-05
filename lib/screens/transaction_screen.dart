@@ -111,6 +111,12 @@ class _TransactionScreenState extends State<TransactionScreen> {
   }
 
   void _showTransactionDialog(String transactionType) {
+    // Reset controllers at the start of dialog
+    _priceController.clear();
+    _quantityController.clear();
+    _selectedDrink = null;
+    _selectedPurchaser = null;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -133,6 +139,12 @@ class _TransactionScreenState extends State<TransactionScreen> {
                   onChanged: (Drink? newValue) {
                     setState(() {
                       _selectedDrink = newValue;
+                      // Update quantity field with stock value when drink is selected
+                      if (newValue != null) {
+                        _quantityController.text = transactionType == 'in' 
+                            ? '0'  // For IN transactions, start with 0
+                            : newValue.stock.toString();  // For OUT transactions, show available stock
+                      }
                     });
                   },
                   validator: (value) => value == null ? 'Please select a product' : null,
@@ -163,7 +175,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
                       }),
                       DropdownMenuItem<Purchaser>(
                         value: null,
-                        child: Text('+ Add New Purchaser'),
+                        child: Text('+ Add New'),
                       ),
                     ],
                     onChanged: (Purchaser? newValue) async {
@@ -185,11 +197,23 @@ class _TransactionScreenState extends State<TransactionScreen> {
                   ),
                 TextFormField(
                   controller: _quantityController,
-                  decoration: InputDecoration(labelText: 'Quantity'),
+                  decoration: InputDecoration(
+                    labelText: 'Quantity',
+                    helperText: transactionType == 'out' ? 'Maximum available: ${_selectedDrink?.stock ?? 0}' : null,
+                  ),
                   keyboardType: TextInputType.number,
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter a quantity';
+                    }
+                    final quantity = int.tryParse(value);
+                    if (quantity == null || quantity <= 0) {
+                      return 'Please enter a valid quantity';
+                    }
+                    if (transactionType == 'out' && _selectedDrink != null) {
+                      if (quantity > _selectedDrink!.stock) {
+                        return 'Quantity cannot exceed available stock';
+                      }
                     }
                     return null;
                   },

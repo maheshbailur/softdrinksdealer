@@ -37,6 +37,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   void initState() {
     super.initState();
     _loadDrinks();
+    _loadManufacturers();
   }
 
   Future<void> _loadDrinks() async {
