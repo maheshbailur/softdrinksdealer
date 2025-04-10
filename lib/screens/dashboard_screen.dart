@@ -3,12 +3,48 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
+// import 'package:device_info_plus/device_info_plus.dart';
+// import 'package:sqflite/sqflite.dart';
 import 'package:excel/excel.dart';
+import 'package:logging/logging.dart';
+import 'package:file_picker/file_picker.dart';
 import '../database/database_helper.dart';
 import '../repositories/drink_repository.dart';
 import '../repositories/transactions_repository.dart';
+// import '../repositories/drink_repository.dart';
+// import '../repositories/purchaser_repository.dart'; // Import PurchaserRepository
+// import '../repositories/manufacturer_repository.dart'; // Import ManufacturerRepository
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 
+final _logger = Logger('DashboardScreen');
+
+class ImportStatus extends StatelessWidget {
+  final String message;
+  final double? progress;
+
+  const ImportStatus({
+    Key? key,
+    required this.message,
+    this.progress,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(message, style: Theme.of(context).textTheme.bodyLarge),
+          if (progress != null) ...[
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: progress),
+          ],
+        ],
+      ),
+    );
+  }
+}
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -167,10 +203,146 @@ class _DashboardScreenState extends State<DashboardScreen> {
   //   }
   // }
 
-  Future<void> _handleImport() async {
-    // Implement import functionality here
-    print('Import functionality triggered');
+Future<void> _handleImport() async {
+  // Show progress dialog
+  final progressDialog = showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const AlertDialog(
+      content: ImportStatus(
+        message: 'Starting import...',
+      ),
+    ),
+  );
+
+  try {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx'],
+    );
+
+    if (result == null || result.files.isEmpty) {
+      Navigator.of(context).pop(); // Close progress dialog
+      _showSnackBar('No file selected', isError: true);
+      return;
+    }
+
+    final filePath = result.files.single.path!;
+    _updateImportStatus('Reading Excel file...');
+    
+    final bytes = File(filePath).readAsBytesSync();
+    final excel = Excel.decodeBytes(bytes);
+
+    final db = await DatabaseHelper.instance.database;
+    int totalRows = 0;
+    int processedRows = 0;
+
+    // Count total rows first
+    for (final entry in excel.tables.entries) {
+      final sheet = entry.value;
+      if (sheet != null && sheet.rows.isNotEmpty) {
+        totalRows += sheet.rows.length - 1; // Subtract 1 for header row
+      }
+    }
+
+    // Use a single transaction for all operations
+    await db.transaction((txn) async {
+      for (final entry in excel.tables.entries) {
+        final sheetName = entry.key;
+        final sheet = entry.value;
+        
+        if (sheet == null || sheet.rows.isEmpty) {
+          _logger.warning('Skipping empty sheet: $sheetName');
+          continue;
+        }
+
+        _updateImportStatus('Processing sheet: $sheetName');
+        final columnHeaders = sheet.rows.first
+            .map((e) => e?.value?.toString() ?? '')
+            .toList();
+
+        // Process each sheet's data
+        for (int i = 1; i < sheet.rows.length; i++) {
+          final row = sheet.rows[i];
+          if (row.every((cell) => cell == null)) {
+            processedRows++;
+            continue;
+          }
+
+          final data = <String, dynamic>{};
+          for (int j = 0; j < columnHeaders.length; j++) {
+            if (j >= row.length) continue;
+            final key = columnHeaders[j];
+            final value = row[j]?.value;
+            data[key] = value?.toString();
+          }
+
+          await txn.insert(
+            sheetName,
+            data,
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+          
+          processedRows++;
+          _updateImportProgress(processedRows / totalRows);
+        }
+      }
+    });
+
+    Navigator.of(context).pop(); // Close progress dialog
+    await _loadDashboardData();
+    
+    _showSnackBar(
+      'Import successful from file: ${result.files.single.name}',
+      isError: false
+    );
+  } catch (e) {
+    Navigator.of(context).pop(); // Close progress dialog
+    _logger.severe('Import error', e);
+    _showSnackBar(
+      'Failed to import data. Please check file format.',
+      isError: true
+    );
   }
+}
+
+// Add these helper methods to update the progress dialog
+void _updateImportStatus(String message) {
+  if (!mounted) return;
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      pageBuilder: (context, _, __) => AlertDialog(
+        content: ImportStatus(message: message),
+      ),
+      opaque: false,
+    ),
+  );
+}
+
+void _updateImportProgress(double progress) {
+  if (!mounted) return;
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      pageBuilder: (context, _, __) => AlertDialog(
+        content: ImportStatus(
+          message: 'Importing data...',
+          progress: progress,
+        ),
+      ),
+      opaque: false,
+    ),
+  );
+}
+
+void _showSnackBar(String message, {bool isError = false}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      backgroundColor: isError ? Colors.red : Colors.green,
+    ),
+  );
+}
+
 
   Future<void> _handleBackup() async {
     try {
