@@ -132,4 +132,20 @@ class DatabaseHelper {
     final db = await database;
     return await db.getVersion();
   }
+
+  // Add this new method
+  Future<void> batchInsert(String table, List<Map<String, dynamic>> records) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final record in records) {
+        batch.insert(
+          table, 
+          record,
+          conflictAlgorithm: ConflictAlgorithm.replace
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
 }

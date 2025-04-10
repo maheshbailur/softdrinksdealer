@@ -5,7 +5,7 @@ import '../repositories/transactions_repository.dart';
 import '../models/drink.dart';
 import '../models/in_transaction.dart';
 import '../models/out_transaction.dart';
-import 'dart:math' show pi;
+import 'dart:math' show pi, max;
 
 class ReportsScreen extends StatefulWidget {
   @override
@@ -366,9 +366,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _buildLineChart() {
+    // Calculate maxY with a minimum value to prevent zero interval
     double maxY = _salesSpots.isEmpty ? 10 : 
       _salesSpots.reduce((a, b) => a.y > b.y ? a : b).y;
-    maxY = (maxY * 1.2).ceilToDouble(); // Add 20% padding to max value
+    maxY = max((maxY * 1.2).ceilToDouble(), 10.0); // Ensure minimum maxY of 10
+    
+    // Ensure interval is never zero by using max
+    double interval = max(maxY / 5, 1.0);
 
     return SizedBox(
       height: 300,
@@ -377,7 +381,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           gridData: FlGridData(
             show: true,
             drawVerticalLine: true,
-            horizontalInterval: maxY / 5, // Show 5 horizontal grid lines
+            horizontalInterval: interval, // Use non-zero interval
             verticalInterval: 1,
           ),
           titlesData: FlTitlesData(
@@ -385,7 +389,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                interval: maxY / 5,
+                interval: interval,
                 reservedSize: 40,
                 getTitlesWidget: (value, meta) {
                   return Text('₹${value.toStringAsFixed(0)}',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:logging/logging.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/transaction_screen.dart';
@@ -8,6 +9,15 @@ import 'repositories/drink_repository.dart';
 import 'providers/inventory_alert_provider.dart';
 
 void main() {
+    // Add logging configuration
+  Logger.root.level = Level.ALL;
+  Logger.root.onRecord.listen((record) {
+    print('${record.level.name}: ${record.time}: ${record.message}');
+    if (record.error != null) {
+      print('Error: ${record.error}');
+      print('Stack trace: ${record.stackTrace}');
+    }
+  });
   runApp(
     MultiProvider(
       providers: [

@@ -204,15 +204,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // }
 
 Future<void> _handleImport() async {
-  // Show progress dialog
-  final progressDialog = showDialog(
+  // Create a BuildContext variable to track dialog context
+  BuildContext? dialogContext;
+
+  // Show initial progress dialog
+  showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (context) => const AlertDialog(
-      content: ImportStatus(
-        message: 'Starting import...',
-      ),
-    ),
+    builder: (BuildContext context) {
+      dialogContext = context;
+      return const AlertDialog(
+        content: ImportStatus(
+          message: 'Starting import...',
+        ),
+      );
+    },
   );
 
   try {
@@ -222,7 +228,9 @@ Future<void> _handleImport() async {
     );
 
     if (result == null || result.files.isEmpty) {
-      Navigator.of(context).pop(); // Close progress dialog
+      if (dialogContext != null) {
+        Navigator.of(dialogContext!).pop();
+      }
       _showSnackBar('No file selected', isError: true);
       return;
     }
@@ -237,12 +245,23 @@ Future<void> _handleImport() async {
     int totalRows = 0;
     int processedRows = 0;
 
-    // Count total rows first
+    // Count total rows first, excluding empty sheets
     for (final entry in excel.tables.entries) {
       final sheet = entry.value;
-      if (sheet != null && sheet.rows.isNotEmpty) {
-        totalRows += sheet.rows.length - 1; // Subtract 1 for header row
+      if (sheet != null && sheet.rows.length > 1) { // Check for more than just header
+        // Count non-empty rows
+        int nonEmptyRows = sheet.rows.skip(1).where((row) => 
+          row.any((cell) => cell?.value != null)).length;
+        totalRows += nonEmptyRows;
       }
+    }
+
+    if (totalRows == 0) {
+      if (dialogContext != null) {
+        Navigator.of(dialogContext!).pop();
+      }
+      _showSnackBar('No data found in the Excel file', isError: true);
+      return;
     }
 
     // Use a single transaction for all operations
@@ -256,10 +275,22 @@ Future<void> _handleImport() async {
           continue;
         }
 
+        if (sheet.rows.length <= 1) {
+          _logger.warning('Skipping sheet with only headers: $sheetName');
+          continue;
+        }
+
         _updateImportStatus('Processing sheet: $sheetName');
+        
         final columnHeaders = sheet.rows.first
             .map((e) => e?.value?.toString() ?? '')
+            .where((header) => header.isNotEmpty)
             .toList();
+
+        if (columnHeaders.isEmpty) {
+          _logger.warning('Skipping sheet with no valid headers');
+          continue;
+        }
 
         // Process each sheet's data
         for (int i = 1; i < sheet.rows.length; i++) {
@@ -289,7 +320,9 @@ Future<void> _handleImport() async {
       }
     });
 
-    Navigator.of(context).pop(); // Close progress dialog
+    if (dialogContext != null) {
+      Navigator.of(dialogContext!).pop();
+    }
     await _loadDashboardData();
     
     _showSnackBar(
@@ -297,7 +330,9 @@ Future<void> _handleImport() async {
       isError: false
     );
   } catch (e) {
-    Navigator.of(context).pop(); // Close progress dialog
+    if (dialogContext != null) {
+      Navigator.of(dialogContext!).pop();
+    }
     _logger.severe('Import error', e);
     _showSnackBar(
       'Failed to import data. Please check file format.',
@@ -306,22 +341,23 @@ Future<void> _handleImport() async {
   }
 }
 
-// Add these helper methods to update the progress dialog
+// Modify the update methods to use pushReplacement instead of push
 void _updateImportStatus(String message) {
   if (!mounted) return;
-  Navigator.of(context).push(
+  Navigator.of(context).pushReplacement(
     PageRouteBuilder(
       pageBuilder: (context, _, __) => AlertDialog(
         content: ImportStatus(message: message),
       ),
       opaque: false,
+      barrierDismissible: false,
     ),
   );
 }
 
 void _updateImportProgress(double progress) {
   if (!mounted) return;
-  Navigator.of(context).push(
+  Navigator.of(context).pushReplacement(
     PageRouteBuilder(
       pageBuilder: (context, _, __) => AlertDialog(
         content: ImportStatus(
@@ -330,6 +366,7 @@ void _updateImportProgress(double progress) {
         ),
       ),
       opaque: false,
+      barrierDismissible: false,
     ),
   );
 }
@@ -564,22 +601,28 @@ void _showSnackBar(String message, {bool isError = false}) {
                 children: [
                   Icon(icon, color: color),
                   SizedBox(width: 8),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[600],
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
               SizedBox(height: 8),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
                 ),
               ),
             ],
