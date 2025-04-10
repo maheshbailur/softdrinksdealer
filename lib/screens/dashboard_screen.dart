@@ -1,11 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:excel/excel.dart';
+import '../database/database_helper.dart';
 import '../repositories/drink_repository.dart';
 import '../repositories/transactions_repository.dart';
-import '../database/database_helper.dart';
-// import '../models/drink.dart';
-// import '../models/in_transaction.dart;
-// import '../models/out_transaction.dart';
-import 'package:intl/intl.dart';
+
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -144,14 +147,117 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return indianRupeesFormat.format(amount);
   }
 
+  // Future<bool> _requestStoragePermission() async {
+  //   final deviceInfo = DeviceInfoPlugin();
+  //   final androidInfo = await deviceInfo.androidInfo;
+  //   final sdkInt = androidInfo.version.sdkInt;
+
+  //   if (sdkInt >= 30) {
+  //     var status = await Permission.manageExternalStorage.status;
+  //     if (!status.isGranted) {
+  //       status = await Permission.manageExternalStorage.request();
+  //     }
+  //     return status.isGranted;
+  //   } else {
+  //     var status = await Permission.storage.status;
+  //     if (!status.isGranted) {
+  //       status = await Permission.storage.request();
+  //     }
+  //     return status.isGranted;
+  //   }
+  // }
+
   Future<void> _handleImport() async {
     // Implement import functionality here
     print('Import functionality triggered');
   }
 
   Future<void> _handleBackup() async {
-    // Implement backup functionality here
-    print('Backup functionality triggered');
+    try {
+      // 🔐 Request permission
+      final manageStatus = await Permission.manageExternalStorage.status;
+      PermissionStatus finalStatus = manageStatus;
+
+      if (!manageStatus.isGranted) {
+        finalStatus = await Permission.manageExternalStorage.request();
+      }
+
+      if (!finalStatus.isGranted) {
+        finalStatus = await Permission.storage.request();
+      }
+
+      if (!finalStatus.isGranted) {
+        _showError('Storage permission is required for backup');
+        return;
+      }
+
+      // 📂 Get downloads directory
+      final Directory downloadsDir = Platform.isAndroid
+          ? Directory('/storage/emulated/0/Download')
+          : await getExternalStorageDirectory() ?? Directory.systemTemp;
+
+      if (!downloadsDir.existsSync()) {
+        _showError('Downloads directory not found');
+        return;
+      }
+
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+      final filePath = '${downloadsDir.path}/drinks_inventory_backup_$timestamp.xlsx';
+
+      final excel = Excel.createExcel(); // Creates a new Excel file
+      final db = await DatabaseHelper.instance.database;
+
+      // 📄 List of tables to backup
+      final tables = [
+        'Manufacturers',
+        'Purchasers',
+        'Drinks',
+        'IN_Transactions',
+        'OUT_Transactions',
+        'Payments',
+        'Receivables'
+      ];
+
+      for (final table in tables) {
+        final List<Map<String, dynamic>> rows = await db.query(table);
+        final List<Map> columns = await db.rawQuery('PRAGMA table_info($table)');
+        final columnNames = columns.map((col) => col['name'].toString()).toList();
+
+        final sheet = excel[table]; // Automatically creates a sheet
+
+        // Header row
+        sheet.appendRow(columnNames);
+
+        // Data rows
+        for (final row in rows) {
+          final rowData = columnNames.map((col) => row[col]?.toString() ?? '').toList();
+          sheet.appendRow(rowData);
+        }
+      }
+
+      // ✨ Save the Excel file
+      final encoded = excel.encode();
+      if (encoded != null) {
+        final outFile = File(filePath)
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(encoded);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Backup saved to: $filePath'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+    } catch (e) {
+      print('Backup error: $e');
+      if (mounted) {
+        _showError('Failed to create Excel backup: ${e.toString()}');
+      }
+    }
   }
 
   @override
