@@ -449,6 +449,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _showDeleteManufacturerDialog(int manufacturerId, String manufacturerName) {
+    // First close the Add New Drink dialog
+    Navigator.pop(context);
+    
+    // Then show the delete confirmation dialog
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -456,18 +460,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
         content: Text('Are you sure you want to delete "$manufacturerName"?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              // Reopen the Add New Drink dialog after canceling
+              _showAddDrinkDialog();
+            },
             child: Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
               await _deleteManufacturer(manufacturerId);
               Navigator.pop(dialogContext); // Close delete confirmation dialog
-              Navigator.pop(context); // Close add drink dialog
-              // Reopen add drink dialog with updated list
-              Future.delayed(Duration(milliseconds: 300), () {
-                _showAddDrinkDialog();
-              });
             },
             child: Text('Delete', style: TextStyle(color: Colors.red)),
           ),
@@ -492,6 +495,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     padding: EdgeInsets.zero,
                     constraints: BoxConstraints(),
                     onPressed: () {
+                      Navigator.pop(context);
                       _showDeleteManufacturerDialog(manufacturer.id, manufacturer.name);
                     },
                   ),

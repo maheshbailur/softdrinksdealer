@@ -163,12 +163,20 @@ class _TransactionScreenState extends State<TransactionScreen> {
                               children: [
                                 Text(purchaser.name),
                                 IconButton(
-                                  icon: Icon(Icons.close, size: 16),
+                                  icon: Icon(Icons.close, color: Colors.red, size: 18),
                                   padding: EdgeInsets.zero,
                                   constraints: BoxConstraints(),
-                                  onPressed: () async {
+                                  onPressed: () async  {
+                                    Navigator.pop(context);
                                     await _deletePurchaser(purchaser);
-                                    setDialogState(() {}); // Update dialog state
+
+                                    // Update the dialog state
+                                    setDialogState(() {
+                                      // If the deleted purchaser was selected, clear the selection
+                                      if (_selectedPurchaser?.id == purchaser.id) {
+                                        _selectedPurchaser = null;
+                                      }
+                                    });
                                   },
                                 ),
                               ],
