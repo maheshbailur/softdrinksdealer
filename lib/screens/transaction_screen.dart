@@ -119,130 +119,135 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('${transactionType.toUpperCase()} Transaction'),
-        content: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<Drink>(
-                  value: _selectedDrink,
-                  decoration: InputDecoration(labelText: 'Product'),
-                  items: drinks.map((Drink drink) {
-                    return DropdownMenuItem<Drink>(
-                      value: drink,
-                      child: Text('${drink.name} (${drink.manufacturerName ?? "Unknown"})'),
-                    );
-                  }).toList(),
-                  onChanged: (Drink? newValue) {
-                    setState(() {
-                      _selectedDrink = newValue;
-                      // Update quantity field with stock value when drink is selected
-                      if (newValue != null) {
-                        _quantityController.text = transactionType == 'in' 
-                            ? '0'  // For IN transactions, start with 0
-                            : newValue.stock.toString();  // For OUT transactions, show available stock
-                      }
-                    });
-                  },
-                  validator: (value) => value == null ? 'Please select a product' : null,
-                ),
-                if (transactionType == 'out')
-                  DropdownButtonFormField<Purchaser>(
-                    value: _selectedPurchaser,
-                    decoration: InputDecoration(labelText: 'Purchaser'),
-                    items: [
-                      ...purchasers.map((Purchaser purchaser) {
-                        return DropdownMenuItem<Purchaser>(
-                          value: purchaser,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(purchaser.name),
-                              IconButton(
-                                icon: Icon(Icons.close, size: 16),
-                                padding: EdgeInsets.zero,
-                                constraints: BoxConstraints(),
-                                onPressed: () {
-                                  _deletePurchaser(purchaser);
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                      DropdownMenuItem<Purchaser>(
-                        value: null,
-                        child: Text('+ Add New'),
-                      ),
-                    ],
-                    onChanged: (Purchaser? newValue) async {
-                      if (newValue == null) {
-                        Purchaser? newPurchaser = await _showAddPurchaserDialog(); // Declare the variable here
-                        if (newPurchaser != null) {
-                          setState(() {
-                            purchasers.add(newPurchaser); // Add to the list of purchasers
-                            _selectedPurchaser = newPurchaser; // Update selected purchaser
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('${transactionType.toUpperCase()} Transaction'),
+          content: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<Drink>(
+                    value: _selectedDrink,
+                    decoration: InputDecoration(labelText: 'Product'),
+                    items: drinks.map((Drink drink) {
+                      return DropdownMenuItem<Drink>(
+                        value: drink,
+                        child: Text('${drink.name} (${drink.manufacturerName ?? "Unknown"})'),
+                      );
+                    }).toList(),
+                    onChanged: (Drink? newValue) {
+                      setState(() {
+                        _selectedDrink = newValue;
+                        // Update quantity field with stock value when drink is selected
+                        if (newValue != null) {
+                          _quantityController.text = transactionType == 'in' 
+                              ? '0'  // For IN transactions, start with 0
+                              : newValue.stock.toString();  // For OUT transactions, show available stock
+                        }
+                      });
+                    },
+                    validator: (value) => value == null ? 'Please select a product' : null,
+                  ),
+                  if (transactionType == 'out')
+                    DropdownButtonFormField<Purchaser>(
+                      value: _selectedPurchaser,
+                      decoration: InputDecoration(labelText: 'Purchaser'),
+                      items: [
+                        ...purchasers.map((Purchaser purchaser) {
+                          return DropdownMenuItem<Purchaser>(
+                            value: purchaser,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(purchaser.name),
+                                IconButton(
+                                  icon: Icon(Icons.close, size: 16),
+                                  padding: EdgeInsets.zero,
+                                  constraints: BoxConstraints(),
+                                  onPressed: () async {
+                                    await _deletePurchaser(purchaser);
+                                    setDialogState(() {}); // Update dialog state
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        DropdownMenuItem<Purchaser>(
+                          value: null,
+                          child: Text('+ Add New'),
+                        ),
+                      ],
+                      onChanged: (Purchaser? newValue) async {
+                        if (newValue == null) {
+                          Purchaser? newPurchaser = await _showAddPurchaserDialog();
+                          if (newPurchaser != null) {
+                            setState(() {
+                              purchasers.add(newPurchaser);
+                            });
+                            setDialogState(() {
+                              _selectedPurchaser = newPurchaser;
+                            });
+                          }
+                        } else {
+                          setDialogState(() {
+                            _selectedPurchaser = newValue;
                           });
                         }
-                      } else {
-                        setState(() {
-                          _selectedPurchaser = newValue;
-                        });
+                      },
+                      validator: (value) => value == null ? 'Please select a purchaser' : null,
+                    ),
+                  TextFormField(
+                    controller: _quantityController,
+                    decoration: InputDecoration(
+                      labelText: 'Quantity',
+                      helperText: transactionType == 'out' ? 'Maximum available: ${_selectedDrink?.stock ?? 0}' : null,
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a quantity';
                       }
+                      final quantity = int.tryParse(value);
+                      if (quantity == null || quantity <= 0) {
+                        return 'Please enter a valid quantity';
+                      }
+                      if (transactionType == 'out' && _selectedDrink != null) {
+                        if (quantity > _selectedDrink!.stock) {
+                          return 'Quantity cannot exceed available stock';
+                        }
+                      }
+                      return null;
                     },
-                    validator: (value) => value == null ? 'Please select a purchaser' : null,
                   ),
-                TextFormField(
-                  controller: _quantityController,
-                  decoration: InputDecoration(
-                    labelText: 'Quantity',
-                    helperText: transactionType == 'out' ? 'Maximum available: ${_selectedDrink?.stock ?? 0}' : null,
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter a quantity';
-                    }
-                    final quantity = int.tryParse(value);
-                    if (quantity == null || quantity <= 0) {
-                      return 'Please enter a valid quantity';
-                    }
-                    if (transactionType == 'out' && _selectedDrink != null) {
-                      if (quantity > _selectedDrink!.stock) {
-                        return 'Quantity cannot exceed available stock';
+                  TextFormField(
+                    controller: _priceController,
+                    decoration: InputDecoration(labelText: 'Price'),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a price';
                       }
-                    }
-                    return null;
-                  },
-                ),
-                TextFormField(
-                  controller: _priceController,
-                  decoration: InputDecoration(labelText: 'Price'),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter a price';
-                    }
-                    return null;
-                  },
-                ),
-              ],
+                      return null;
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => _saveTransaction(transactionType),
+              child: Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => _saveTransaction(transactionType),
-            child: Text('Save'),
-          ),
-        ],
       ),
     );
   }
@@ -331,11 +336,23 @@ class _TransactionScreenState extends State<TransactionScreen> {
                       name: nameController.text,
                       contactInfo: contactController.text,
                     );
+                    
+                    // Show success message
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Purchaser added successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    
                     Navigator.pop(context, purchaser);
                   }
                 } catch (e) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error adding purchaser: $e')),
+                    SnackBar(
+                      content: Text('Error adding purchaser: $e'),
+                      backgroundColor: Colors.red,
+                    ),
                   );
                 }
               }
@@ -348,25 +365,43 @@ class _TransactionScreenState extends State<TransactionScreen> {
   }
 
   Future<void> _deletePurchaser(Purchaser purchaser) async {
-    final isInUse = await _isPurchaserInUse(purchaser.id);
-    
-    if (isInUse) {
+    try {
+      final isInUse = await _isPurchaserInUse(purchaser.id);
+      
+      if (isInUse) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cannot delete purchaser that is in use'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      await _purchaserRepository.deletePurchaser(purchaser.id);
+      
+      setState(() {
+        purchasers.removeWhere((m) => m.id == purchaser.id);
+        if (_selectedPurchaser?.id == purchaser.id) {
+          _selectedPurchaser = null;
+        }
+      });
+
+      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Cannot delete purchaser that is in use'),
+          content: Text('Purchaser deleted successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error deleting purchaser: $e'),
           backgroundColor: Colors.red,
         ),
       );
-      return;
     }
-
-    await _purchaserRepository.deletePurchaser(purchaser.id);
-    setState(() {
-      purchasers.removeWhere((m) => m.id == purchaser.id);
-      if (_selectedPurchaser?.id == purchaser.id) {
-        _selectedPurchaser = null;
-      }
-    });
   }
 
   Future<bool> _isPurchaserInUse(int purchaserId) async {

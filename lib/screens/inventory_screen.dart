@@ -92,12 +92,33 @@ class _InventoryScreenState extends State<InventoryScreen> {
         whereArgs: [manufacturerId],
       );
 
-      await _loadManufacturers(); // ✅ Reload manufacturer list
+      await _loadManufacturers(); // Reload manufacturer list
 
-      setState(() {}); // ✅ Refresh UI after deletion
+      setState(() {
+        // Reset selected manufacturer if the deleted one was selected
+        if (_selectedManufacturer == manufacturerId) {
+          _selectedManufacturer = _manufacturers.isNotEmpty ? _manufacturers.first.id : null;
+        }
+      });
 
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Manufacturer deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
       print('Error deleting manufacturer: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting manufacturer'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -334,93 +355,56 @@ class _InventoryScreenState extends State<InventoryScreen> {
   void _showAddDrinkDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add New Drink'),
-        content: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Drink Name Input
-                TextFormField(
-                  controller: _nameController,
-                  decoration: InputDecoration(labelText: 'Name'),
-                  validator: (value) =>
-                      value?.isEmpty ?? true ? 'Please enter name' : null,
-                ),
-
-                // Manufacturer Dropdown
-                DropdownButtonFormField<int>(
-                  value: _selectedManufacturer ?? -1,
-                  decoration: InputDecoration(labelText: 'Manufacturer'),
-                  items: [
-                    ..._manufacturers.map((manufacturer) => DropdownMenuItem<int>(
-                          value: manufacturer.id,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(manufacturer.name), // Manufacturer Name
-                              IconButton(
-                                icon: Icon(Icons.close, color: Colors.red, size: 18),
-                                onPressed: () {
-                                  _showDeleteManufacturerDialog(manufacturer.id, manufacturer.name);
-                                },
-                              ),
-                            ],
-                          ),
-                        )),
-                    DropdownMenuItem<int>(
-                      value: -1,
-                      child: Text('+ Add New'),
-                    ),
-                  ],
-                  onChanged: (int? newValue) {
-                    if (newValue == -1) {
-                      _showAddManufacturerDialog();
-                    } else if (newValue != null) {
-                      setState(() {
-                        _selectedManufacturer = newValue;
-                      });
-                    }
-                  },
-                  validator: (value) => (value == null || value == -1) ? 'Please select a manufacturer' : null,
-                ),
-
-                // Category Dropdown
-                DropdownButtonFormField<String>(
-                  value: _selectedCategory,
-                  decoration: InputDecoration(labelText: 'Category'),
-                  items: _categories.map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    if (newValue != null) {
-                      setState(() {
-                        _selectedCategory = newValue;
-                      });
-                    }
-                  },
-                  validator: (value) =>
-                      value == null ? 'Please select a category' : null,
-                ),
-              ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Add New Drink'),
+          content: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: InputDecoration(labelText: 'Name'),
+                    validator: (value) =>
+                        value?.isEmpty ?? true ? 'Please enter name' : null,
+                  ),
+                  _buildManufacturerDropdown(),
+                  DropdownButtonFormField<String>(
+                    value: _selectedCategory,
+                    decoration: InputDecoration(labelText: 'Category'),
+                    items: _categories.map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _selectedCategory = newValue;
+                        });
+                      }
+                    },
+                    validator: (value) =>
+                        value == null ? 'Please select a category' : null,
+                  ),
+                ],
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: _saveDrink,
+              child: Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: _saveDrink,
-            child: Text('Save'),
-          ),
-        ],
       ),
     );
   }
@@ -467,23 +451,69 @@ class _InventoryScreenState extends State<InventoryScreen> {
   void _showDeleteManufacturerDialog(int manufacturerId, String manufacturerName) {
     showDialog(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext dialogContext) => AlertDialog(
         title: Text('Delete Manufacturer'),
         content: Text('Are you sure you want to delete "$manufacturerName"?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
-              await _deleteManufacturer(manufacturerId); // ✅ Delete and wait
-              Navigator.pop(context); // ✅ Close after deletion
+              await _deleteManufacturer(manufacturerId);
+              Navigator.pop(dialogContext); // Close delete confirmation dialog
+              Navigator.pop(context); // Close add drink dialog
+              // Reopen add drink dialog with updated list
+              Future.delayed(Duration(milliseconds: 300), () {
+                _showAddDrinkDialog();
+              });
             },
             child: Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildManufacturerDropdown() {
+    return DropdownButtonFormField<int>(
+      value: _selectedManufacturer ?? -1,
+      decoration: InputDecoration(labelText: 'Manufacturer'),
+      items: [
+        ..._manufacturers.map((manufacturer) => DropdownMenuItem<int>(
+              value: manufacturer.id,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(manufacturer.name),
+                  IconButton(
+                    icon: Icon(Icons.close, color: Colors.red, size: 18),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints(),
+                    onPressed: () {
+                      _showDeleteManufacturerDialog(manufacturer.id, manufacturer.name);
+                    },
+                  ),
+                ],
+              ),
+            )),
+        DropdownMenuItem<int>(
+          value: -1,
+          child: Text('+ Add New'),
+        ),
+      ],
+      onChanged: (int? newValue) async {
+        if (newValue == -1) {
+          _showAddManufacturerDialog();
+        } else if (newValue != null) {
+          setState(() {
+            _selectedManufacturer = newValue;
+          });
+        }
+      },
+      validator: (value) =>
+          (value == null || value == -1) ? 'Please select a manufacturer' : null,
     );
   }
 }
