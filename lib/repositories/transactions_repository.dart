@@ -84,11 +84,60 @@ class TransactionRepository {
     });
   }
 
-  Future<List<Map<String, dynamic>>> getTodayTransactions() async {
+  // get both In and out transactions in a date range
+  Future<List<Map<String, dynamic>>> loadTransactionsForSelectedRange(
+      DateTime start, DateTime end) async {
     final db = await _dbHelper.database;
 
-    // Get today's date in YYYY-MM-DD format
-    final String today = DateTime.now().toIso8601String().split('T')[0];
+    // to get the transactions including the end date, Add one day to to it
+    final adjustedEnd = end.add(Duration(days: 1));
+
+    final List<Map<String, dynamic>> transactions = await db.rawQuery('''
+      SELECT 
+        IN_T.id, 
+        IN_T.drink_id, 
+        D.name AS drink_name, 
+        M.name AS manufacturer_name, 
+        IN_T.quantity, 
+        IN_T.price, 
+        'IN' AS type, 
+        IN_T.transaction_date
+      FROM IN_Transactions AS IN_T
+      JOIN Drinks AS D ON IN_T.drink_id = D.id
+      LEFT JOIN Manufacturers AS M ON D.manufacturer_id = M.id
+      WHERE IN_T.transaction_date BETWEEN ? AND ?
+
+      UNION ALL
+
+      SELECT 
+        OUT_T.id, 
+        OUT_T.drink_id, 
+        D.name AS drink_name, 
+        M.name AS manufacturer_name, 
+        OUT_T.quantity, 
+        OUT_T.price, 
+        'OUT' AS type, 
+        OUT_T.transaction_date
+      FROM OUT_Transactions AS OUT_T
+      JOIN Drinks AS D ON OUT_T.drink_id = D.id
+      LEFT JOIN Manufacturers AS M ON D.manufacturer_id = M.id
+      WHERE OUT_T.transaction_date BETWEEN ? AND ?
+
+      ORDER BY transaction_date DESC
+    ''', [start.toIso8601String(), 
+          adjustedEnd.toIso8601String(), 
+          start.toIso8601String(), 
+          adjustedEnd.toIso8601String()]);
+
+    return transactions;
+  }
+
+
+  Future<List<Map<String, dynamic>>> getTransactionsByDate({DateTime? date}) async {
+    final db = await _dbHelper.database;
+
+    // Use the provided date or default to today's date
+    final String selectedDate = (date ?? DateTime.now()).toIso8601String().split('T')[0];
 
     final List<Map<String, dynamic>> transactions = await db.rawQuery('''
       SELECT 
@@ -122,7 +171,7 @@ class TransactionRepository {
       WHERE DATE(OUT_T.transaction_date) = DATE(?)
 
       ORDER BY transaction_date DESC
-    ''', [today, today]);
+    ''', [selectedDate, selectedDate]);
 
     print("Today's Transactions: $transactions");
 

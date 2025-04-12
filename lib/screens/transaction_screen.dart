@@ -32,7 +32,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
   void initState() {
     super.initState();
     _transactions = []; // Initialize with an empty list
-    _loadTransactions(); // Load data
+    _loadTransactionsByDate(date: DateTime.now()); // Load data with today's date
     _loadDrinks(); // Load drinks
     _loadPurchasers(); // Load purchasers
   }
@@ -49,8 +49,26 @@ class _TransactionScreenState extends State<TransactionScreen> {
     });
   }
 
-  Future<void> _loadTransactions() async {
-    final transactions = await transactionRepository.getTodayTransactions();
+  Future<void> _loadTransactionsByDate({required DateTime date}) async {
+    final transactions = await transactionRepository.getTransactionsByDate(date: date);
+
+    setState(() {
+      _transactions = List<Map<String, dynamic>>.from(transactions); // ✅ Convert to mutable list
+
+      _transactions.sort((a, b) {
+        final dateA = DateTime.parse(a['transaction_date']); 
+        final dateB = DateTime.parse(b['transaction_date']);
+        return dateB.compareTo(dateA); // Sort latest first
+      });
+    });
+
+    print("Transactions after sorting: $_transactions");
+    print("Rebuilding UI with transactions count: ${_transactions.length}");
+  }
+
+  Future<void> _loadTransactionsByDateRange({required DateTime start, required DateTime end}) async {
+
+    final transactions = await transactionRepository.loadTransactionsForSelectedRange(start, end);
 
     setState(() {
       _transactions = List<Map<String, dynamic>>.from(transactions); // ✅ Convert to mutable list
@@ -68,12 +86,74 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    String todayDate = DateFormat('dd/MM/yyyy').format(DateTime.now());
+    String pickedDate = DateFormat('dd/MM/yyyy').format(DateTime.now());
 
     return Scaffold(
-      appBar: AppBar(title: Text('Transactions ($todayDate)')),
+      appBar: AppBar(
+        title: Text('Transactions'),
+        actions: [
+          PopupMenuButton<String>(
+            icon: Icon(Icons.history),
+            onSelected: (value) {
+              if (value == 'picked_date') {
+                showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now(),
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                ).then((pickedDate) {
+                  if (pickedDate != null) {
+                  _loadTransactionsByDate(date: pickedDate);
+                  }
+                });
+              } else if (value == 'date_range') {
+                showDateRangePicker(
+                  context: context,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                  builder: (context, child) {
+                    return Theme(
+                      data: ThemeData.light(),
+                      child: child!,
+                    );
+                  },
+                ).then((pickedDate) {
+                  if (pickedDate != null) {
+                    _loadTransactionsByDateRange(
+                      start: pickedDate.start, 
+                      end: pickedDate.end
+                    );
+                  }
+                });
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'picked_date',
+                child: Row(
+                  children: [
+                    Icon(Icons.today, color: Theme.of(context).iconTheme.color),
+                    SizedBox(width: 8),
+                    Text('a day'),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'date_range',
+                child: Row(
+                  children: [
+                    Icon(Icons.calendar_today, color: Theme.of(context).iconTheme.color),
+                    SizedBox(width: 8),
+                    Text('day-range'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: _transactions.isEmpty
-          ? Center(child: Text('No transactions today'))
+          ? Center(child: Text('No transactions'))
           : ListView.builder(
               itemCount: _transactions.length,
               itemBuilder: (context, index) {
@@ -283,7 +363,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
         await transactionRepository.insertOutTransaction(transaction);
       }
 
-      await _loadTransactions(); // Refresh transaction list
+      await _loadTransactionsByDate(date: DateTime.now()); // Refresh transaction list
       setState(() {});
       Navigator.pop(context);
       _clearForm();
