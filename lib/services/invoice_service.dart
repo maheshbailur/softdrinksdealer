@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:intl/intl.dart';
+import 'package:collection/collection.dart';
 
 class InvoiceService {
   // Add GST rate constant
@@ -12,18 +13,24 @@ class InvoiceService {
   Future<void> generateInvoice(List<Map<String, dynamic>> transactions) async {
     final pdf = pw.Document();
 
-    // Create PDF content
-    pdf.addPage(
-      pw.MultiPage(
-        build: (context) {
-          return [
-            _buildHeader(),
-            _buildInvoiceTable(transactions),
-            _buildFooter(transactions),
-          ];
-        },
-      ),
-    );
+    // Group transactions by purchaser_name
+    final groupedTransactions = groupTransactionsByPurchaser(transactions);
+
+    // Create pages for each purchaser
+    groupedTransactions.forEach((purchaserName, purchaserTransactions) {
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          build: (context) {
+            return [
+              _buildHeader(purchaserName),
+              _buildInvoiceTable(purchaserTransactions),
+              _buildFooter(purchaserTransactions),
+            ];
+          },
+        ),
+      );
+    });
 
     // Save PDF
     final output = await getTemporaryDirectory();
@@ -35,13 +42,23 @@ class InvoiceService {
     await OpenFile.open(file.path);
   }
 
-  pw.Widget _buildHeader() {
+  Map<String, List<Map<String, dynamic>>> groupTransactionsByPurchaser(
+      List<Map<String, dynamic>> transactions) {
+    return groupBy(transactions, (txn) => txn['purchaser_name'] as String);
+  }
+
+  pw.Widget _buildHeader(String purchaserName) {
     return pw.Header(
       level: 0,
       child: pw.Column(
         children: [
-          pw.Text('INVOICE', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+          pw.Text('INVOICE', 
+            style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)
+          ),
           pw.SizedBox(height: 10),
+          pw.Text('Purchaser: $purchaserName',
+            style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)
+          ),
           pw.Text('Date: ${DateFormat('dd/MM/yyyy').format(DateTime.now())}'),
           pw.SizedBox(height: 20),
         ],
