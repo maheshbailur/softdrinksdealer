@@ -144,7 +144,8 @@ class TransactionRepository {
         IN_T.id, 
         IN_T.drink_id, 
         D.name AS drink_name, 
-        M.name AS manufacturer_name, 
+        M.name AS manufacturer_name,
+        NULL AS purchaser_name,
         IN_T.quantity, 
         IN_T.price, 
         'IN' AS type, 
@@ -161,6 +162,7 @@ class TransactionRepository {
         OUT_T.drink_id, 
         D.name AS drink_name, 
         M.name AS manufacturer_name, 
+        P.name AS purchaser_name, 
         OUT_T.quantity, 
         OUT_T.price, 
         'OUT' AS type, 
@@ -168,6 +170,7 @@ class TransactionRepository {
       FROM OUT_Transactions AS OUT_T
       JOIN Drinks AS D ON OUT_T.drink_id = D.id
       LEFT JOIN Manufacturers AS M ON D.manufacturer_id = M.id
+      JOIN Purchasers AS P ON OUT_T.purchaser_id = P.id
       WHERE DATE(OUT_T.transaction_date) = DATE(?)
 
       ORDER BY transaction_date DESC

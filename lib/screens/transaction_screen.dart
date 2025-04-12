@@ -7,6 +7,7 @@ import '../models/purchaser.dart';
 import '../repositories/transactions_repository.dart';
 import '../repositories/drink_repository.dart';
 import '../repositories/purchaser_repository.dart'; // Import PurchaserRepository
+import '../services/invoice_service.dart';
 
 class TransactionScreen extends StatefulWidget {
   @override
@@ -168,12 +169,21 @@ class _TransactionScreenState extends State<TransactionScreen> {
             onPressed: () => _showTransactionDialog('in'),
             label: Text('IN'),
             icon: Icon(Icons.add),
+            heroTag: 'btn1',
           ),
           SizedBox(width: 10),
           FloatingActionButton.extended(
             onPressed: () => _showTransactionDialog('out'),
             label: Text('OUT'),
             icon: Icon(Icons.remove),
+            heroTag: 'btn2',
+          ),
+          SizedBox(width: 10),
+          FloatingActionButton.extended(
+            onPressed: () => _generateInvoice(),
+            label: Text('Invoice'),
+            icon: Icon(Icons.receipt),
+            heroTag: 'btn3',
           ),
         ],
       ),
@@ -495,6 +505,49 @@ class _TransactionScreenState extends State<TransactionScreen> {
   Future<bool> _isPurchaserInUse(int purchaserId) async {
     final transactions = await transactionRepository.getTransactionsByPurchaser(purchaserId);
     return transactions.isNotEmpty;
+  }
+
+  void _generateInvoice() async {
+    if (_transactions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No transactions available for invoice generation'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final outTransactions = _transactions.where((txn) => txn['type'] == 'OUT').toList();
+    
+    if (outTransactions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No OUT transactions available for invoice generation'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final invoiceService = InvoiceService();
+      await invoiceService.generateInvoice(outTransactions);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invoice generated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating invoice: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
