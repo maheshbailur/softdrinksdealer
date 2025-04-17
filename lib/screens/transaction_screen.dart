@@ -24,6 +24,8 @@ class _TransactionScreenState extends State<TransactionScreen> {
   final _quantityController = TextEditingController();
   Drink? _selectedDrink;
   Purchaser? _selectedPurchaser; // Only for OUT transactions
+  String? _selectedTransactionType; //  _TransactionScreenState class for filtering
+  String? _selectedManufacturer; // Add to the state variables _TransactionScreenState for filtering
 
   final transactionRepository = TransactionRepository();
   final drinkRepository = DrinkRepository();
@@ -57,35 +59,48 @@ class _TransactionScreenState extends State<TransactionScreen> {
     final transactions = await transactionRepository.getTransactionsByDate(date: date);
 
     setState(() {
-      _transactions = List<Map<String, dynamic>>.from(transactions); // ✅ Convert to mutable list
+      _transactions = List<Map<String, dynamic>>.from(transactions);
+      
+      // Apply filters if selected
+      if (_selectedTransactionType != null || _selectedManufacturer != null) {
+        _transactions = _transactions.where((txn) {
+          bool matchesType = _selectedTransactionType == null || 
+            txn['type'].toString().toUpperCase() == _selectedTransactionType;
+          
+          bool matchesManufacturer = _selectedManufacturer == null ||
+            txn['manufacturer_name'] == _selectedManufacturer;
+          
+          return matchesType && matchesManufacturer;
+        }).toList();
+      }
 
       _transactions.sort((a, b) {
         final dateA = DateTime.parse(a['transaction_date']); 
         final dateB = DateTime.parse(b['transaction_date']);
-        return dateB.compareTo(dateA); // Sort latest first
+        return dateB.compareTo(dateA);
       });
     });
-
-    print("Transactions after sorting: $_transactions");
-    print("Rebuilding UI with transactions count: ${_transactions.length}");
   }
 
   Future<void> _loadTransactionsByDateRange({required DateTime start, required DateTime end}) async {
-
     final transactions = await transactionRepository.loadTransactionsForSelectedRange(start, end);
 
     setState(() {
-      _transactions = List<Map<String, dynamic>>.from(transactions); // ✅ Convert to mutable list
+      _transactions = List<Map<String, dynamic>>.from(transactions);
+      
+      // Apply filter if one is selected
+      if (_selectedTransactionType != null) {
+        _transactions = _transactions.where((txn) =>
+          txn['type'].toString().toUpperCase() == _selectedTransactionType
+        ).toList();
+      }
 
       _transactions.sort((a, b) {
         final dateA = DateTime.parse(a['transaction_date']); 
         final dateB = DateTime.parse(b['transaction_date']);
-        return dateB.compareTo(dateA); // Sort latest first
+        return dateB.compareTo(dateA);
       });
     });
-
-    print("Transactions after sorting: $_transactions");
-    print("Rebuilding UI with transactions count: ${_transactions.length}");
   }
 
   @override
@@ -108,7 +123,11 @@ class _TransactionScreenState extends State<TransactionScreen> {
                 });
               },
             )
-          else
+          else ...[
+            IconButton(
+              icon: Icon(Icons.filter_list),
+              onPressed: _showFilterDialog,
+            ),
             PopupMenuButton<String>(
               icon: Icon(Icons.history),
               onSelected: (value) {
@@ -167,6 +186,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
                 ),
               ],
             ),
+          ],
         ],
       ),
       body: _transactions.isEmpty
@@ -258,6 +278,129 @@ class _TransactionScreenState extends State<TransactionScreen> {
         ),
       ),
     );
+  }
+
+  void _showFilterDialog() {
+    // Get all transactions from repository before filtering
+    transactionRepository.getTransactionsByDate(date: DateTime.now()).then((allTransactions) {
+      // Get unique manufacturer names from all transactions
+      final manufacturers = allTransactions
+          .map((txn) => txn['manufacturer_name'] as String?)
+          .where((name) => name != null)
+          .toSet()
+          .toList()
+          ..sort();  // Sort alphabetically
+
+      // Reset selected manufacturer if it's not in the list
+      if (_selectedManufacturer != null && 
+          !manufacturers.contains(_selectedManufacturer)) {
+        _selectedManufacturer = null;
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: Text('Filter Transactions'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String?>(
+                  value: _selectedTransactionType,
+                  decoration: InputDecoration(
+                    labelText: 'Transaction Type',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: null,
+                      child: Text('All'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'IN',
+                      child: Text('IN'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'OUT',
+                      child: Text('OUT'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() => _selectedTransactionType = value);
+                  },
+                ),
+                SizedBox(height: 16),
+                if (manufacturers.isNotEmpty) // Only show manufacturer dropdown if there are manufacturers
+                  DropdownButtonFormField<String?>(
+                    value: _selectedManufacturer,
+                    decoration: InputDecoration(
+                      labelText: 'Manufacturer',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: null,
+                        child: Text('All'),
+                      ),
+                      ...manufacturers.map((name) => DropdownMenuItem(
+                        value: name,
+                        child: Text(name ?? 'Unknown'),
+                      )),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _selectedManufacturer = value);
+                    },
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedTransactionType = null;
+                    _selectedManufacturer = null;
+                  });
+                  Navigator.pop(context);
+                  _applyFilter();
+                },
+                child: Text('Reset'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _applyFilter();
+                },
+                child: Text('Apply'),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  void _applyFilter() {
+    setState(() {
+      if (_selectedTransactionType == null && _selectedManufacturer == null) {
+        // Show all transactions
+        _loadTransactionsByDate(date: DateTime.now());
+      } else {
+        // Apply filters
+        _transactions = _transactions.where((txn) {
+          bool matchesType = _selectedTransactionType == null || 
+            txn['type'].toString().toUpperCase() == _selectedTransactionType;
+          
+          bool matchesManufacturer = _selectedManufacturer == null ||
+            txn['manufacturer_name'] == _selectedManufacturer;
+          
+          return matchesType && matchesManufacturer;
+        }).toList();
+      }
+    });
   }
 
   void _showTransactionDialog(String transactionType) {
