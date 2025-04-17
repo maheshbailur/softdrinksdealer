@@ -29,6 +29,9 @@ class _TransactionScreenState extends State<TransactionScreen> {
   final drinkRepository = DrinkRepository();
   final _purchaserRepository = PurchaserRepository(); // Initialize PurchaserRepository
 
+  bool _selectionMode = false;
+  Set<Map<String, dynamic>> _selectedTransactions = {};
+
   @override
   void initState() {
     super.initState();
@@ -91,66 +94,79 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Transactions'),
+        title: _selectionMode 
+            ? Text('${_selectedTransactions.length} selected') 
+            : Text('Transactions'),
         actions: [
-          PopupMenuButton<String>(
-            icon: Icon(Icons.history),
-            onSelected: (value) {
-              if (value == 'picked_date') {
-                showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                ).then((pickedDate) {
-                  if (pickedDate != null) {
-                  _loadTransactionsByDate(date: pickedDate);
-                  }
+          if (_selectionMode) 
+            IconButton(
+              icon: Icon(Icons.close),
+              onPressed: () {
+                setState(() {
+                  _selectionMode = false;
+                  _selectedTransactions.clear();
                 });
-              } else if (value == 'date_range') {
-                showDateRangePicker(
-                  context: context,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                  builder: (context, child) {
-                    return Theme(
-                      data: ThemeData.light(),
-                      child: child!,
-                    );
-                  },
-                ).then((pickedDate) {
-                  if (pickedDate != null) {
-                    _loadTransactionsByDateRange(
-                      start: pickedDate.start, 
-                      end: pickedDate.end
-                    );
-                  }
-                });
-              }
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
-                value: 'picked_date',
-                child: Row(
-                  children: [
-                    Icon(Icons.today, color: Theme.of(context).iconTheme.color),
-                    SizedBox(width: 8),
-                    Text('a day'),
-                  ],
+              },
+            )
+          else
+            PopupMenuButton<String>(
+              icon: Icon(Icons.history),
+              onSelected: (value) {
+                if (value == 'picked_date') {
+                  showDatePicker(
+                    context: context,
+                    initialDate: DateTime.now(),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  ).then((pickedDate) {
+                    if (pickedDate != null) {
+                    _loadTransactionsByDate(date: pickedDate);
+                    }
+                  });
+                } else if (value == 'date_range') {
+                  showDateRangePicker(
+                    context: context,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                    builder: (context, child) {
+                      return Theme(
+                        data: ThemeData.light(),
+                        child: child!,
+                      );
+                    },
+                  ).then((pickedDate) {
+                    if (pickedDate != null) {
+                      _loadTransactionsByDateRange(
+                        start: pickedDate.start, 
+                        end: pickedDate.end
+                      );
+                    }
+                  });
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: 'picked_date',
+                  child: Row(
+                    children: [
+                      Icon(Icons.today, color: Theme.of(context).iconTheme.color),
+                      SizedBox(width: 8),
+                      Text('a day'),
+                    ],
+                  ),
                 ),
-              ),
-              PopupMenuItem<String>(
-                value: 'date_range',
-                child: Row(
-                  children: [
-                    Icon(Icons.calendar_today, color: Theme.of(context).iconTheme.color),
-                    SizedBox(width: 8),
-                    Text('day-range'),
-                  ],
+                PopupMenuItem<String>(
+                  value: 'date_range',
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_today, color: Theme.of(context).iconTheme.color),
+                      SizedBox(width: 8),
+                      Text('day-range'),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
       body: _transactions.isEmpty
@@ -165,37 +181,81 @@ class _TransactionScreenState extends State<TransactionScreen> {
       floatingActionButton: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          FloatingActionButton.extended(
-            onPressed: () => _showTransactionDialog('in'),
-            label: Text('IN'),
-            icon: Icon(Icons.add),
-            heroTag: 'btn1',
-          ),
-          SizedBox(width: 10),
-          FloatingActionButton.extended(
-            onPressed: () => _showTransactionDialog('out'),
-            label: Text('OUT'),
-            icon: Icon(Icons.remove),
-            heroTag: 'btn2',
-          ),
-          SizedBox(width: 10),
-          FloatingActionButton.extended(
-            onPressed: () => _generateInvoice(),
-            label: Text('Invoice'),
-            icon: Icon(Icons.receipt),
-            heroTag: 'btn3',
-          ),
+          if (_selectionMode && _selectedTransactions.isNotEmpty)
+            FloatingActionButton.extended(
+              onPressed: _generateSelectedInvoice,
+              label: Text('Generate Selected Invoice'),
+              icon: Icon(Icons.receipt),
+              heroTag: 'selected_invoice',
+            )
+          else ...[
+            FloatingActionButton.extended(
+              onPressed: () => _showTransactionDialog('in'),
+              label: Text('IN'),
+              icon: Icon(Icons.add),
+              heroTag: 'btn1',
+            ),
+            SizedBox(width: 10),
+            FloatingActionButton.extended(
+              onPressed: () => _showTransactionDialog('out'),
+              label: Text('OUT'),
+              icon: Icon(Icons.remove),
+              heroTag: 'btn2',
+            ),
+            SizedBox(width: 10),
+            FloatingActionButton.extended(
+              onPressed: () => _generateInvoice(),
+              label: Text('Invoice'),
+              icon: Icon(Icons.receipt),
+              heroTag: 'btn3',
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildTransactionCard(Map<String, dynamic> transaction, String type) {
+    final bool isSelected = _selectedTransactions.contains(transaction);
+    
     return Card(
       margin: EdgeInsets.all(8),
-      child: ListTile(
-        title: Text('$type [${transaction['drink_name']}-${transaction['manufacturer_name'] ?? 'Unknown'}] Qty: ${transaction['quantity']}, Price: ${transaction['price']}'),
-        // subtitle: Text('Quantity: ${transaction['quantity']}, Price: ${transaction['price']}'),
+      color: isSelected ? Colors.blue.withOpacity(0.1) : null,
+      child: InkWell(
+        onLongPress: () {
+          if (type == 'OUT') {
+            setState(() {
+              _selectionMode = true;
+              _selectedTransactions.add(transaction);
+            });
+          }
+        },
+        onTap: () {
+          if (_selectionMode) {
+            setState(() {
+              if (isSelected) {
+                _selectedTransactions.remove(transaction);
+                if (_selectedTransactions.isEmpty) {
+                  _selectionMode = false;
+                }
+              } else if (type == 'OUT') {
+                _selectedTransactions.add(transaction);
+              }
+            });
+          }
+        },
+        child: ListTile(
+          leading: _selectionMode 
+              ? Icon(
+                  isSelected ? Icons.check_circle : Icons.circle_outlined,
+                  color: isSelected ? Colors.blue : null,
+                )
+              : null,
+          title: Text(
+            '$type [${transaction['drink_name']}-${transaction['manufacturer_name'] ?? 'Unknown'}] '
+            'Qty: ${transaction['quantity']}, Price: ${transaction['price']}'
+          ),
+        ),
       ),
     );
   }
@@ -534,6 +594,42 @@ class _TransactionScreenState extends State<TransactionScreen> {
       final invoiceService = InvoiceService();
       await invoiceService.generateInvoice(outTransactions);
       
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invoice generated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating invoice: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _generateSelectedInvoice() async {
+    if (_selectedTransactions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No transactions selected'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final invoiceService = InvoiceService();
+      await invoiceService.generateInvoice(_selectedTransactions.toList());
+      
+      setState(() {
+        _selectionMode = false;
+        _selectedTransactions.clear();
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Invoice generated successfully'),
