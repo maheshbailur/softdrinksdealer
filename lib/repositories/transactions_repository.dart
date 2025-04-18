@@ -88,22 +88,21 @@ class TransactionRepository {
   Future<List<Map<String, dynamic>>> loadTransactionsForSelectedRange(
       DateTime start, DateTime end) async {
     final db = await _dbHelper.database;
-
-    // to get the transactions including the end date, Add one day to to it
     final adjustedEnd = end.add(Duration(days: 1));
 
     final List<Map<String, dynamic>> transactions = await db.rawQuery('''
       SELECT 
         IN_T.id, 
         IN_T.drink_id, 
-        D.name AS drink_name, 
-        M.name AS manufacturer_name, 
-        IN_T.quantity, 
-        IN_T.price, 
+        COALESCE(D.name, 'Unknown') AS drink_name, 
+        COALESCE(M.name, 'Unknown') AS manufacturer_name, 
+        COALESCE(IN_T.quantity, 0) AS quantity, 
+        COALESCE(IN_T.price, 0.0) AS price, 
         'IN' AS type, 
-        IN_T.transaction_date
+        COALESCE(IN_T.transaction_date, DATETIME('now')) AS transaction_date,
+        NULL AS purchaser_name
       FROM IN_Transactions AS IN_T
-      JOIN Drinks AS D ON IN_T.drink_id = D.id
+      LEFT JOIN Drinks AS D ON IN_T.drink_id = D.id
       LEFT JOIN Manufacturers AS M ON D.manufacturer_id = M.id
       WHERE IN_T.transaction_date BETWEEN ? AND ?
 
@@ -112,26 +111,40 @@ class TransactionRepository {
       SELECT 
         OUT_T.id, 
         OUT_T.drink_id, 
-        D.name AS drink_name, 
-        M.name AS manufacturer_name, 
-        OUT_T.quantity, 
-        OUT_T.price, 
+        COALESCE(D.name, 'Unknown') AS drink_name, 
+        COALESCE(M.name, 'Unknown') AS manufacturer_name, 
+        COALESCE(OUT_T.quantity, 0) AS quantity, 
+        COALESCE(OUT_T.price, 0.0) AS price, 
         'OUT' AS type, 
-        OUT_T.transaction_date
+        COALESCE(OUT_T.transaction_date, DATETIME('now')) AS transaction_date,
+        COALESCE(P.name, 'Unknown') AS purchaser_name
       FROM OUT_Transactions AS OUT_T
-      JOIN Drinks AS D ON OUT_T.drink_id = D.id
+      LEFT JOIN Drinks AS D ON OUT_T.drink_id = D.id
       LEFT JOIN Manufacturers AS M ON D.manufacturer_id = M.id
+      LEFT JOIN Purchasers AS P ON OUT_T.purchaser_id = P.id
       WHERE OUT_T.transaction_date BETWEEN ? AND ?
 
       ORDER BY transaction_date DESC
-    ''', [start.toIso8601String(), 
-          adjustedEnd.toIso8601String(), 
-          start.toIso8601String(), 
-          adjustedEnd.toIso8601String()]);
+    ''', [
+      start.toIso8601String(),
+      adjustedEnd.toIso8601String(),
+      start.toIso8601String(),
+      adjustedEnd.toIso8601String()
+    ]);
 
-    return transactions;
+    // Post-process to ensure all fields have non-null values
+    return transactions.map((txn) => {
+      'id': txn['id'] ?? 0,
+      'drink_id': txn['drink_id'] ?? 0,
+      'drink_name': txn['drink_name'] ?? 'Unknown',
+      'manufacturer_name': txn['manufacturer_name'] ?? 'Unknown',
+      'purchaser_name': txn['purchaser_name'] ?? 'Unknown',
+      'quantity': txn['quantity'] ?? 0,
+      'price': txn['price'] ?? 0.0,
+      'type': txn['type'] ?? 'UNKNOWN',
+      'transaction_date': txn['transaction_date'] ?? DateTime.now().toIso8601String(),
+    }).toList();
   }
-
 
   Future<List<Map<String, dynamic>>> getTransactionsByDate({DateTime? date}) async {
     final db = await _dbHelper.database;

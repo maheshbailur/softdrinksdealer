@@ -281,30 +281,24 @@ class _TransactionScreenState extends State<TransactionScreen> {
   }
 
   void _showFilterDialog() {
-    // Get all transactions from repository before filtering
-    transactionRepository.getTransactionsByDate(date: DateTime.now()).then((allTransactions) {
-      // Get unique manufacturer names from all transactions
-      final manufacturers = allTransactions
-          .map((txn) => txn['manufacturer_name'] as String?)
-          .where((name) => name != null)
-          .toSet()
-          .toList()
-          ..sort();  // Sort alphabetically
+    // Get unique manufacturers from transactions
+    final manufacturers = _transactions
+        .map((txn) => txn['manufacturer_name'] as String?)
+        .where((name) => name != null && name != 'Unknown')
+        .toSet()
+        .toList()
+        ..sort();
 
-      // Reset selected manufacturer if it's not in the list
-      if (_selectedManufacturer != null && 
-          !manufacturers.contains(_selectedManufacturer)) {
-        _selectedManufacturer = null;
-      }
-
-      showDialog(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setState) => AlertDialog(
-            title: Text('Filter Transactions'),
-            content: Column(
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Filter Transactions'),
+          content: SingleChildScrollView( // Added ScrollView for better layout
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Transaction Type Dropdown
                 DropdownButtonFormField<String?>(
                   value: _selectedTransactionType,
                   decoration: InputDecoration(
@@ -312,75 +306,61 @@ class _TransactionScreenState extends State<TransactionScreen> {
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    DropdownMenuItem(
-                      value: null,
-                      child: Text('All'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'IN',
-                      child: Text('IN'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'OUT',
-                      child: Text('OUT'),
-                    ),
+                    DropdownMenuItem(value: null, child: Text('All')),
+                    DropdownMenuItem(value: 'IN', child: Text('IN')),
+                    DropdownMenuItem(value: 'OUT', child: Text('OUT')),
                   ],
                   onChanged: (value) {
                     setState(() => _selectedTransactionType = value);
                   },
                 ),
                 SizedBox(height: 16),
-                if (manufacturers.isNotEmpty) // Only show manufacturer dropdown if there are manufacturers
-                  DropdownButtonFormField<String?>(
-                    value: _selectedManufacturer,
-                    decoration: InputDecoration(
-                      labelText: 'Manufacturer',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      DropdownMenuItem(
-                        value: null,
-                        child: Text('All'),
-                      ),
-                      ...manufacturers.map((name) => DropdownMenuItem(
-                        value: name,
-                        child: Text(name ?? 'Unknown'),
-                      )),
-                    ],
-                    onChanged: (value) {
-                      setState(() => _selectedManufacturer = value);
-                    },
+                // Manufacturer Dropdown - Always show this
+                DropdownButtonFormField<String?>(
+                  value: _selectedManufacturer,
+                  decoration: InputDecoration(
+                    labelText: 'Manufacturer',
+                    border: OutlineInputBorder(),
                   ),
+                  items: [
+                    DropdownMenuItem(value: null, child: Text('All')),
+                    ...manufacturers.map((name) => DropdownMenuItem(
+                      value: name,
+                      child: Text(name ?? 'Unknown'),
+                    )),
+                  ],
+                  onChanged: (value) {
+                    setState(() => _selectedManufacturer = value);
+                  },
+                ),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedTransactionType = null;
-                    _selectedManufacturer = null;
-                  });
-                  Navigator.pop(context);
-                  _applyFilter();
-                },
-                child: Text('Reset'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _applyFilter();
-                },
-                child: Text('Apply'),
-              ),
-            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _selectedTransactionType = null;
+                _selectedManufacturer = null;
+                Navigator.pop(context);
+                _applyFilter();
+              },
+              child: Text('Reset'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _applyFilter();
+              },
+              child: Text('Apply'),
+            ),
+          ],
         ),
-      );
-    });
+      ),
+    );
   }
 
   void _applyFilter() {

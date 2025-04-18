@@ -21,7 +21,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
     'year': Text('Years', style: TextStyle(fontSize: 12)),
   };
 
+  static const Map<String, String> dataTypes = {
+    'SALES': 'SALES',
+    'PURCHASES': 'PURCHASE',
+    'PROFIT': 'PROFIT/LOSS',
+    'INVENTORY': 'INVENTORY LEVELS',
+  };
+
   String _selectedPeriod = 'week';
+  String _selectedDataType = 'SALES'; // Add this line
   String _selectedGraphType = 'LINE'; // Default graph type
   final DrinkRepository _drinkRepository = DrinkRepository();
   final TransactionRepository _transactionRepository = TransactionRepository();
@@ -68,7 +76,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     _netProfit = _totalRevenue - _totalExpenses;
 
     // Create sales chart data
-    _salesSpots = _createSalesSpots(outTransactions);
+    _salesSpots = _createSalesSpots(outTransactions, inTransactions);
 
     // Find most popular item
     Map<int, int> salesCount = {};
@@ -117,7 +125,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  List<FlSpot> _createSalesSpots(List<OutTransaction> transactions) {
+  List<FlSpot> _createSalesSpots(List<OutTransaction> outTransactions, [List<InTransaction>? inTransactions]) {
+    switch (_selectedDataType) {
+      case 'PURCHASES':
+        return _createPurchaseSpots(inTransactions ?? []);
+      case 'PROFIT':
+        return _createProfitSpots(outTransactions, inTransactions ?? []);
+      case 'INVENTORY':
+        return _createInventorySpots();
+      case 'SALES':
+      default:
+        return _createSalesDataSpots(outTransactions);
+    }
+  }
+
+  List<FlSpot> _createSalesDataSpots(List<OutTransaction> transactions) {
     if (transactions.isEmpty) return [FlSpot(0, 0)];
 
     DateTime startDate = _getStartDate();
@@ -274,10 +296,103 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  List<FlSpot> _createPurchaseSpots(List<InTransaction> transactions) {
+    if (transactions.isEmpty) return [FlSpot(0, 0)];
+    
+    DateTime startDate = _getStartDate();
+    DateTime endDate = DateTime.now();
+    
+    Map<DateTime, double> dailyPurchases = {};
+    // Initialize dates
+    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+      dailyPurchases[startDate.add(Duration(days: i))] = 0;
+    }
+
+    // Aggregate purchase data
+    for (var tr in transactions) {
+      if (tr.transactionDate.isAfter(startDate) && 
+          tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+        DateTime purchaseDate = DateTime(
+          tr.transactionDate.year,
+          tr.transactionDate.month,
+          tr.transactionDate.day,
+        );
+        dailyPurchases[purchaseDate] = (dailyPurchases[purchaseDate] ?? 0) + tr.price;
+      }
+    }
+
+    // Convert to spots
+    List<FlSpot> spots = [];
+    var sortedDates = dailyPurchases.keys.toList()..sort();
+    for (int i = 0; i < sortedDates.length; i++) {
+      spots.add(FlSpot(i.toDouble(), dailyPurchases[sortedDates[i]] ?? 0));
+    }
+
+    return spots;
+  }
+
+  List<FlSpot> _createProfitSpots(List<OutTransaction> outTransactions, List<InTransaction> inTransactions) {
+    DateTime startDate = _getStartDate();
+    DateTime endDate = DateTime.now();
+    
+    Map<DateTime, double> dailyProfit = {};
+    // Initialize dates
+    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+      dailyProfit[startDate.add(Duration(days: i))] = 0;
+    }
+
+    // Calculate daily revenue
+    for (var tr in outTransactions) {
+      if (tr.transactionDate.isAfter(startDate) && 
+          tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+        DateTime saleDate = DateTime(
+          tr.transactionDate.year,
+          tr.transactionDate.month,
+          tr.transactionDate.day,
+        );
+        dailyProfit[saleDate] = (dailyProfit[saleDate] ?? 0) + tr.price;
+      }
+    }
+
+    // Subtract daily expenses
+    for (var tr in inTransactions) {
+      if (tr.transactionDate.isAfter(startDate) && 
+          tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+        DateTime purchaseDate = DateTime(
+          tr.transactionDate.year,
+          tr.transactionDate.month,
+          tr.transactionDate.day,
+        );
+        dailyProfit[purchaseDate] = (dailyProfit[purchaseDate] ?? 0) - tr.price;
+      }
+    }
+
+    // Convert to spots
+    List<FlSpot> spots = [];
+    var sortedDates = dailyProfit.keys.toList()..sort();
+    for (int i = 0; i < sortedDates.length; i++) {
+      spots.add(FlSpot(i.toDouble(), dailyProfit[sortedDates[i]] ?? 0));
+    }
+
+    return spots;
+  }
+
+  List<FlSpot> _createInventorySpots() {
+    List<FlSpot> spots = [];
+    for (int i = 0; i < _drinks.length; i++) {
+      spots.add(FlSpot(i.toDouble(), _drinks[i].stock.toDouble()));
+    }
+    return spots;
+  }
+
   String _getQuarterKey(DateTime date) {
     int year = date.year;
     int quarter = ((date.month - 1) ~/ 3) + 1;
     return '$year-Q$quarter';
+  }
+
+  String get _chartTitle {
+    return dataTypes[_selectedDataType] ?? 'Sales Data';
   }
 
   @override
@@ -293,15 +408,81 @@ class _ReportsScreenState extends State<ReportsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   Expanded(
-                    flex: 1, // Adjust flex to control width ratio
-                    child: _buildPeriodSelector(),
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: _selectedPeriod,
+                      decoration: InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10),
+                        isDense: true,
+                      ),
+                      items: ['week', 'month', 'quarter', 'year'].map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value.toUpperCase(), 
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedPeriod = newValue!;
+                        });
+                        _loadData();
+                      },
+                    ),
                   ),
-                  SizedBox(width: 10),
+                  SizedBox(width: 8),
                   Expanded(
-                    flex: 1, // Adjust flex to control width ratio
-                    child: _buildGraphTypeSelector(),
+                    flex: 2,
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: _selectedDataType,
+                      decoration: InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10),
+                        isDense: true,
+                      ),
+                      items: dataTypes.entries.map((entry) {
+                        return DropdownMenuItem<String>(
+                          value: entry.key,
+                          child: Text(entry.value,
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedDataType = newValue!;
+                        });
+                        _loadData();
+                      },
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      value: _selectedGraphType,
+                      decoration: InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10),
+                        isDense: true,
+                      ),
+                      items: ['LINE', 'BLOCK', 'PI'].map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value,
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedGraphType = newValue!;
+                        });
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -318,51 +499,28 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _buildPeriodSelector() {
-    return DropdownButton<String>(
-      value: _selectedPeriod,
-      items: ['week', 'month', 'quarter', 'year'].map((String value) {
-        return DropdownMenuItem<String>(
-          value: value,
-          child: Text(value.toUpperCase()),
-        );
-      }).toList(),
-      onChanged: (String? newValue) {
-        setState(() {
-          _selectedPeriod = newValue!;
-        });
-        _loadData(); // Reload data when period changes
-      },
-    );
-  }
-
-  Widget _buildGraphTypeSelector() {
-    return DropdownButton<String>(
-      value: _selectedGraphType,
-      items: ['LINE', 'BLOCK', 'PI'].map((String value) {
-        return DropdownMenuItem<String>(
-          value: value,
-          child: Text(value),
-        );
-      }).toList(),
-      onChanged: (String? newValue) {
-        setState(() {
-          _selectedGraphType = newValue!;
-        });
-      },
-    );
-  }
-
   Widget _buildSalesChart() {
-    switch (_selectedGraphType) {
-      case 'BLOCK':
-        return _buildBarChart();
-      case 'PI':
-        return _buildPieChart();
-      case 'LINE':
-      default:
-        return _buildLineChart();
-    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Text(
+            _chartTitle,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        switch (_selectedGraphType) {
+          'BLOCK' => _buildBarChart(),
+          'PI' => _buildPieChart(),
+          'LINE' => _buildLineChart(),
+          _ => _buildLineChart(),
+        }
+      ],
+    );
   }
 
   Widget _buildLineChart() {
@@ -631,7 +789,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Total Revenue:'),
-                Text('\$${_totalRevenue.toStringAsFixed(2)}',
+                Text('\₹${_totalRevenue.toStringAsFixed(2)}',
                     style: TextStyle(color: Colors.green)),
               ],
             ),
@@ -639,7 +797,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Total Expenses:'),
-                Text('\$${_totalExpenses.toStringAsFixed(2)}',
+                Text('\₹${_totalExpenses.toStringAsFixed(2)}',
                     style: TextStyle(color: Colors.red)),
               ],
             ),
@@ -648,7 +806,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Net Profit:'),
-                Text('\$${_netProfit.toStringAsFixed(2)}',
+                Text('\₹${_netProfit.toStringAsFixed(2)}',
                     style: TextStyle(color: _netProfit >= 0 ? Colors.green : Colors.red)),
               ],
             ),
