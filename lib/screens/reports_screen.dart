@@ -603,7 +603,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
         switch (_selectedGraphType) {
           'BLOCK' => _buildBarChart(),
-          'PI' => _buildMainPieChart(),
+          'PI' => _buildPieChart(),
           'LINE' => _buildChart(),
           _ => _buildChart(),
         }
@@ -676,89 +676,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
               dotData: FlDotData(show: true),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBarChart() {
-    return SizedBox(
-      height: 300,
-      child: BarChart(
-        BarChartData(
-          alignment: BarChartAlignment.spaceAround,
-          maxY: _salesSpots.isEmpty ? 0 : _salesSpots.map((spot) => spot.y).reduce((a, b) => a > b ? a : b) * 1.2,
-          barGroups: _salesSpots.asMap().entries.map((entry) {
-            return BarChartGroupData(
-              x: entry.key,
-              barRods: [
-                BarChartRodData(
-                  toY: entry.value.y,
-                  color: Colors.blue.shade400,
-                  width: 20,
-                ),
-              ],
-            );
-          }).toList(),
-          gridData: FlGridData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 60,
-                getTitlesWidget: (value, meta) {
-                  return Text('₹${value.toStringAsFixed(0)}',
-                      style: const TextStyle(fontSize: 10));
-                },
-              ),
-            ),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: AxisTitles(
-              axisNameWidget: periodLabels[_selectedPeriod] ?? const Text('Days'),
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  return Transform.rotate(
-                    angle: _selectedPeriod == 'week' ? -45 * pi / 180 : 0,
-                    child: Text(
-                      _getXAxisLabel(value.toInt()),
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          barTouchData: _selectedDataType == 'PROFIT' || _selectedDataType == 'INVENTORY'
-            ? BarTouchData(enabled: true)
-            : BarTouchData(
-                enabled: true,
-                touchTooltipData: BarTouchTooltipData(
-                  tooltipBgColor: Colors.blue.shade700.withOpacity(0.8),
-                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                    final value = rod.toY;
-                    final dateLabel = _getXAxisLabel(group.x.toInt());
-                    return BarTooltipItem(
-                      '$dateLabel\n₹${value.toStringAsFixed(2)}',
-                      TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    );
-                  },
-                ),
-                touchCallback: (FlTouchEvent event, BarTouchResponse? touchResponse) {
-                  if (event is FlTapUpEvent && touchResponse?.spot != null) {
-                    final spotIndex = touchResponse!.spot!.touchedBarGroupIndex;
-                    _showDetailedBreakdown(spotIndex);
-                  }
-                },
-              ),
         ),
       ),
     );
@@ -977,13 +894,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
         value: entry.value,
         title: '${percentage.toStringAsFixed(1)}%',
         color: color,
-        radius: 50,  // Reduced radius
+        radius: 100,
         titleStyle: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,
           color: Colors.white,
         ),
-        showTitle: true,  // Added showTitle
       ));
 
       legendItems.add(
@@ -1019,70 +935,125 @@ class _ReportsScreenState extends State<ReportsScreen> {
       );
     }
 
-    return Container(
-      height: 300,  // Fixed height
-      child: Column(
-        children: [
-          SizedBox(
-            height: 200,  // Fixed height for pie chart
-            child: PieChart(
-              PieChartData(
-                sections: sections,
-                sectionsSpace: 2,
-                centerSpaceRadius: 20,
-                touchData: PieTouchData(enabled: true),
-                borderData: FlBorderData(show: false),
+    return Column(
+      children: [
+        SizedBox(
+          height: 200,
+          child: PieChart(
+            PieChartData(
+              sections: sections,
+              sectionsSpace: 2,
+              centerSpaceRadius: 30,
+              pieTouchData: PieTouchData(
+                enabled: true,
               ),
             ),
           ),
-          SizedBox(height: 16),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: legendItems,
+        ),
+        SizedBox(height: 20),
+        ...legendItems,
+      ],
+    );
+  }
+
+  Widget _buildBarChart() {
+    return SizedBox(
+      height: 300,
+      child: BarChart(
+        BarChartData(
+          barGroups: _salesSpots.map((spot) {
+            return BarChartGroupData(
+              x: spot.x.toInt(),
+              barRods: [
+                BarChartRodData(
+                  toY: spot.y,
+                  color: Colors.blue,
+                  width: 15,
+                ),
+              ],
+            );
+          }).toList(),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (value, meta) {
+                  return Text('₹${value.toStringAsFixed(0)}',
+                      style: const TextStyle(fontSize: 10));
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              axisNameWidget: periodLabels[_selectedPeriod] ?? const Text('Days'),
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: _getXAxisInterval(),
+                getTitlesWidget: (value, meta) {
+                  return Transform.rotate(
+                    angle: _selectedPeriod == 'week' ? -45 * pi / 180 : 0,
+                    child: Text(
+                      _getXAxisLabel(value.toInt()),
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  );
+                },
               ),
             ),
           ),
-        ],
+          barTouchData: _selectedDataType == 'PROFIT' || _selectedDataType == 'INVENTORY'
+            ? BarTouchData(enabled: true)
+            : BarTouchData(
+                enabled: true,
+                touchTooltipData: BarTouchTooltipData(
+                  tooltipBgColor: Colors.blueAccent.withOpacity(0.8),
+                ),
+                handleBuiltInTouches: true,
+                touchCallback: (FlTouchEvent event, BarTouchResponse? touchResponse) {
+                  if (event is FlTapUpEvent && touchResponse?.spot != null) {
+                    final spotIndex = touchResponse!.spot!.touchedBarGroupIndex;
+                    _showDetailedBreakdown(spotIndex);
+                  }
+                },
+              ),
+        ),
       ),
     );
   }
 
-  Widget _buildMainPieChart() {
+  Widget _buildPieChart() {
     double total = _salesSpots.fold(0, (sum, spot) => sum + spot.y);
     List<PieChartSectionData> sections = [];
     List<Widget> legendItems = [];
 
     for (int i = 0; i < _salesSpots.length; i++) {
       final spot = _salesSpots[i];
-      if (spot.y == 0) continue;
+      if (spot.y == 0) continue; // Skip indices with no value
 
       double percentage = (spot.y / total) * 100;
       Color color = Colors.primaries[i % Colors.primaries.length];
 
+      // Add section to the pie chart
       sections.add(PieChartSectionData(
         value: spot.y,
         title: '${percentage.toStringAsFixed(1)}%',
         color: color,
         radius: 100,
-        titleStyle: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
         showTitle: true,
       ));
 
+      // Add corresponding legend item
       DateTime startDate = _getStartDate();
       String dateLabel = _selectedPeriod == 'week'
           ? '${startDate.add(Duration(days: i)).day}/${_getShortMonthName(startDate.month)}'
           : _getXAxisLabel(i);
 
       legendItems.add(
-        Container(
-          constraints: BoxConstraints(minHeight: 30),
+        GestureDetector(
+          onTap: _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY'
+            ? () => _showDetailedBreakdown(i)
+            : null,
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 width: 12,
@@ -1090,82 +1061,78 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 color: color,
               ),
               SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  dateLabel,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              if (spot.y > 0)
-                Container(
-                  constraints: BoxConstraints(minWidth: 80),
-                  child: Text(
-                    '₹${spot.y.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    textAlign: TextAlign.end,
-                  ),
-                ),
+              Text(dateLabel, style: TextStyle(fontSize: 12)),
             ],
           ),
         ),
       );
     }
 
-    return Container(
-      constraints: BoxConstraints(
-        minHeight: 400,
-        maxHeight: 600,
-      ),
-      child: Column(
-        children: [
-          Expanded(
-            flex: 3,
-            child: PieChart(
-              PieChartData(
-                sections: sections,
-                sectionsSpace: 2,
-                centerSpaceRadius: 40,
-                pieTouchData: PieTouchData(
-                  enabled: _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY',
-                  touchCallback: (FlTouchEvent event, PieTouchResponse? touchResponse) {
-                    if (_selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY' &&
-                        event is FlTapUpEvent && touchResponse?.touchedSection != null) {
-                      final sectionIndex = touchResponse!.touchedSection!.touchedSectionIndex;
-                      _showDetailedBreakdown(sectionIndex);
-                    }
-                  },
+    return Column(
+      children: [
+        SizedBox(
+          height: 300,
+          child: Stack(
+            children: [
+              PieChart(
+                PieChartData(
+                  sections: sections,
+                  sectionsSpace: 2,
+                  centerSpaceRadius: 40,
                 ),
               ),
-            ),
-          ),
-          SizedBox(height: 20),
-          Expanded(
-            flex: 2,
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: legendItems.map((item) => 
-                    GestureDetector(
-                      onTap: _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY'
-                        ? () => _showDetailedBreakdown(legendItems.indexOf(item))
-                        : null,
-                      child: item,
-                    ),
-                  ).toList(),
+              if (_selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY')
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTapUp: (details) {
+                      // Calculate which section was tapped based on angle
+                      final box = context.findRenderObject() as RenderBox;
+                      final center = Offset(box.size.width / 2, box.size.height / 2);
+                      final touchPoint = details.localPosition;
+                      final angle = (touchPoint - center).direction;
+                      
+                      // Convert angle to section index
+                      double totalValue = sections.fold(0.0, (sum, section) => sum + section.value);
+                      double accumulatedValue = 0;
+                      int tappedIndex = -1;
+                      
+                      for (int i = 0; i < sections.length; i++) {
+                        accumulatedValue += sections[i].value;
+                        double sectionAngle = (accumulatedValue / totalValue) * (2 * pi);
+                        if (angle <= sectionAngle) {
+                          tappedIndex = i;
+                          break;
+                        }
+                      }
+                      
+                      if (tappedIndex != -1) {
+                        _showDetailedBreakdown(tappedIndex);
+                      }
+                    },
+                  ),
                 ),
-              ),
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+        SizedBox(height: 10),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            childAspectRatio: 3,
+          ),
+          itemCount: legendItems.length,
+          itemBuilder: (context, index) {
+            return _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY'
+              ? GestureDetector(
+                  onTap: () => _showDetailedBreakdown(index),
+                  child: legendItems[index],
+                )
+              : legendItems[index];
+          },
+        ),
+      ],
     );
   }
 
