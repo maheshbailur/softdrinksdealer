@@ -803,6 +803,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
             ),
           ),
+          barTouchData: _selectedDataType == 'PROFIT' || _selectedDataType == 'INVENTORY'
+            ? BarTouchData(enabled: true)
+            : BarTouchData(
+                enabled: true,
+                touchTooltipData: BarTouchTooltipData(
+                  tooltipBgColor: Colors.blueAccent.withOpacity(0.8),
+                ),
+                handleBuiltInTouches: true,
+                touchCallback: (FlTouchEvent event, BarTouchResponse? touchResponse) {
+                  if (event is FlTapUpEvent && touchResponse?.spot != null) {
+                    final spotIndex = touchResponse!.spot!.touchedBarGroupIndex;
+                    _showDetailedBreakdown(spotIndex);
+                  }
+                },
+              ),
         ),
       ),
     );
@@ -826,6 +841,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         title: '${percentage.toStringAsFixed(1)}%',
         color: color,
         radius: 100,
+        showTitle: true,
       ));
 
       // Add corresponding legend item
@@ -834,42 +850,88 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ? '${startDate.add(Duration(days: i)).day}/${_getShortMonthName(startDate.month)}'
           : _getXAxisLabel(i);
 
-      legendItems.add(Row(
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            color: color,
+      legendItems.add(
+        GestureDetector(
+          onTap: _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY'
+            ? () => _showDetailedBreakdown(i)
+            : null,
+          child: Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                color: color,
+              ),
+              SizedBox(width: 8),
+              Text(dateLabel, style: TextStyle(fontSize: 12)),
+            ],
           ),
-          SizedBox(width: 8),
-          Text(dateLabel, style: TextStyle(fontSize: 12)),
-        ],
-      ));
+        ),
+      );
     }
 
     return Column(
       children: [
         SizedBox(
           height: 300,
-          child: PieChart(
-            PieChartData(
-              sections: sections,
-              sectionsSpace: 2,
-              centerSpaceRadius: 40,
-            ),
+          child: Stack(
+            children: [
+              PieChart(
+                PieChartData(
+                  sections: sections,
+                  sectionsSpace: 2,
+                  centerSpaceRadius: 40,
+                ),
+              ),
+              if (_selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY')
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTapUp: (details) {
+                      // Calculate which section was tapped based on angle
+                      final box = context.findRenderObject() as RenderBox;
+                      final center = Offset(box.size.width / 2, box.size.height / 2);
+                      final touchPoint = details.localPosition;
+                      final angle = (touchPoint - center).direction;
+                      
+                      // Convert angle to section index
+                      double totalValue = sections.fold(0.0, (sum, section) => sum + section.value);
+                      double accumulatedValue = 0;
+                      int tappedIndex = -1;
+                      
+                      for (int i = 0; i < sections.length; i++) {
+                        accumulatedValue += sections[i].value;
+                        double sectionAngle = (accumulatedValue / totalValue) * (2 * pi);
+                        if (angle <= sectionAngle) {
+                          tappedIndex = i;
+                          break;
+                        }
+                      }
+                      
+                      if (tappedIndex != -1) {
+                        _showDetailedBreakdown(tappedIndex);
+                      }
+                    },
+                  ),
+                ),
+            ],
           ),
         ),
-        SizedBox(height: 10), // Reduce gap between chart and index
+        SizedBox(height: 10),
         GridView.builder(
           shrinkWrap: true,
           physics: NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4, // 4 columns
-            childAspectRatio: 3, // Adjust height-to-width ratio
+            crossAxisCount: 4,
+            childAspectRatio: 3,
           ),
           itemCount: legendItems.length,
           itemBuilder: (context, index) {
-            return legendItems[index];
+            return _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY'
+              ? GestureDetector(
+                  onTap: () => _showDetailedBreakdown(index),
+                  child: legendItems[index],
+                )
+              : legendItems[index];
           },
         ),
       ],
