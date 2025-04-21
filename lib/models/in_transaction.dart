@@ -4,6 +4,8 @@ class InTransaction {
   final int quantity;
   final double price;
   final DateTime transactionDate;
+  final String? drinkName;
+  final String? manufacturerName;
 
   InTransaction({
     required this.id,
@@ -11,6 +13,8 @@ class InTransaction {
     required this.quantity,
     required this.price,
     required this.transactionDate,
+    this.drinkName,
+    this.manufacturerName,
   });
 
   Map<String, dynamic> toMap() {
@@ -30,6 +34,8 @@ class InTransaction {
       quantity: map['quantity'],
       price: map['price'],
       transactionDate: DateTime.parse(map['transaction_date']),
+      drinkName: map['drink_name'],
+      manufacturerName: map['manufacturer_name'],
     );
   }
 }

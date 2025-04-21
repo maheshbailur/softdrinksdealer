@@ -55,18 +55,22 @@ class TransactionRepository {
   }
 
   // ✅ Get IN Transactions
-  Future<List<InTransaction>> getInTransactionsByDateRange(
+  Future<List<Map<String, dynamic>>> getInTransactionsByDateRange(
       DateTime start, DateTime end) async {
     final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'IN_Transactions',
-      where: 'transaction_date BETWEEN ? AND ?',
-      whereArgs: [start.toIso8601String(), end.toIso8601String()],
-    );
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        IN_T.*,
+        D.name AS drink_name,
+        M.name AS manufacturer_name
+      FROM IN_Transactions AS IN_T
+      LEFT JOIN Drinks AS D ON IN_T.drink_id = D.id
+      LEFT JOIN Manufacturers AS M ON D.manufacturer_id = M.id
+      WHERE IN_T.transaction_date BETWEEN ? AND ?
+      ORDER BY IN_T.transaction_date DESC
+    ''', [start.toIso8601String(), end.toIso8601String()]);
 
-    return List.generate(maps.length, (i) {
-      return InTransaction.fromMap(maps[i]);
-    });
+    return maps;
   }
 
   // ✅ Get OUT Transactions

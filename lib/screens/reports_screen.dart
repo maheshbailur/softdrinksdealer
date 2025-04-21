@@ -2,10 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../repositories/drink_repository.dart';
 import '../repositories/transactions_repository.dart';
+import '../repositories/purchaser_repository.dart';
 import '../models/drink.dart';
-import '../models/in_transaction.dart';
 import '../models/out_transaction.dart';
-import 'dart:math' show pi, max;
+import 'dart:math' show pi;
+import 'package:intl/intl.dart';
+
+class DetailedDataPoint {
+  final DateTime date;
+  double totalValue; // Removed final
+  final Map<String, double> purchaserBreakdown;
+  final Map<String, double> manufacturerBreakdown;
+
+  DetailedDataPoint({
+    required this.date,
+    required this.totalValue,
+    required this.purchaserBreakdown,
+    required this.manufacturerBreakdown,
+  });
+}
 
 class ReportsScreen extends StatefulWidget {
   @override
@@ -33,7 +48,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   String _selectedGraphType = 'LINE'; // Default graph type
   final DrinkRepository _drinkRepository = DrinkRepository();
   final TransactionRepository _transactionRepository = TransactionRepository();
-  
+  final PurchaserRepository _purchaserRepository = PurchaserRepository(); // Add this line
+
   // Data holders
   List<Drink> _drinks = [];
   double _totalRevenue = 0;
@@ -44,6 +60,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   int _outOfStockItems = 0;
   String _mostPopularItem = '';
   List<FlSpot> _salesSpots = [];
+  Map<int, DetailedDataPoint> _detailedData = {}; // Add detailed data
 
   @override
   void initState() {
@@ -54,7 +71,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Future<void> _loadData() async {
     // Load drinks data
     _drinks = await _drinkRepository.getAllDrinks();
-    
+
     // Calculate inventory metrics
     _totalItems = _drinks.length;
     _lowStockItems = _drinks.where((drink) => drink.stock < 10).length;
@@ -64,19 +81,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
     DateTime startDate = _getStartDate();
     DateTime endDate = DateTime.now();
 
-    // Get IN and OUT transactions
-    List<InTransaction> inTransactions = 
-        await _transactionRepository.getInTransactionsByDateRange(startDate, endDate);
+    // Get transactions with manufacturer information included
+    var inTransactions = await _transactionRepository.getInTransactionsByDateRange(startDate, endDate);
     List<OutTransaction> outTransactions = 
         await _transactionRepository.getOutTransactionsByDateRange(startDate, endDate);
 
     // Calculate financial metrics
-    _totalExpenses = inTransactions.fold(0, (sum, tr) => sum + tr.price);
+    _totalExpenses = inTransactions.fold(0, (sum, tr) => sum + (tr['price'] as num).toDouble());
     _totalRevenue = outTransactions.fold(0, (sum, tr) => sum + tr.price);
     _netProfit = _totalRevenue - _totalExpenses;
 
     // Create sales chart data
     _salesSpots = _createSalesSpots(outTransactions, inTransactions);
+    await _createDetailedData(outTransactions, inTransactions);
 
     // Find most popular item
     Map<int, int> salesCount = {};
@@ -85,9 +102,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
     
     if (salesCount.isNotEmpty) {
-      int mostSoldDrinkId = salesCount.entries
-          .reduce((a, b) => a.value > b.value ? a : b)
-          .key;
+      int mostSoldDrinkId = salesCount.entries.reduce((a, b) => a.value > b.value ? a : b).key;
       Drink? mostSoldDrink = await _drinkRepository.getDrink(mostSoldDrinkId);
       _mostPopularItem = mostSoldDrink?.name ?? 'Unknown';
     } else {
@@ -95,6 +110,77 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
 
     setState(() {});
+  }
+
+  Future<void> _createDetailedData(List<OutTransaction> outTransactions, List<Map<String, dynamic>> inTransactions) async {
+    DateTime startDate = _getStartDate();
+    DateTime endDate = DateTime.now();
+
+    Map<DateTime, DetailedDataPoint> detailedDataMap = {};
+
+    // First initialize all dates
+    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+      DateTime currentDate = startDate.add(Duration(days: i));
+      detailedDataMap[currentDate] = DetailedDataPoint(
+        date: currentDate,
+        totalValue: 0,
+        purchaserBreakdown: {},
+        manufacturerBreakdown: {},
+      );
+    }
+
+    // Process out transactions
+    if (_selectedDataType == 'SALES') {
+      for (var tr in outTransactions) {
+        DateTime transactionDate = DateTime(
+          tr.transactionDate.year,
+          tr.transactionDate.month,
+          tr.transactionDate.day,
+        );
+
+        if (detailedDataMap.containsKey(transactionDate)) {
+          detailedDataMap[transactionDate]!.totalValue += tr.price;
+
+          final purchaser = await _purchaserRepository.getPurchaser(tr.purchaserId);
+          String purchaserName = purchaser?.name ?? 'Unknown Purchaser';
+          
+          detailedDataMap[transactionDate]!.purchaserBreakdown[purchaserName] =
+              (detailedDataMap[transactionDate]!.purchaserBreakdown[purchaserName] ?? 0) + tr.price;
+        }
+      }
+    }
+
+    // Process in transactions
+    if (_selectedDataType == 'PURCHASES') {
+      for (var tr in inTransactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        transactionDate = DateTime(
+          transactionDate.year,
+          transactionDate.month,
+          transactionDate.day,
+        );
+
+        if (detailedDataMap.containsKey(transactionDate)) {
+          String manufacturerName = tr['manufacturer_name'] ?? 'Unknown Manufacturer';
+          double price = (tr['price'] as num).toDouble();
+          
+          detailedDataMap[transactionDate]!.manufacturerBreakdown[manufacturerName] =
+              (detailedDataMap[transactionDate]!.manufacturerBreakdown[manufacturerName] ?? 0) + price;
+              
+          // Update total value after adding to manufacturer breakdown
+          detailedDataMap[transactionDate]!.totalValue = 
+              detailedDataMap[transactionDate]!.manufacturerBreakdown.values.fold(0, (sum, value) => sum + value);
+        }
+      }
+    }
+
+    // Update the _detailedData map
+    setState(() {
+      _detailedData = detailedDataMap.map((key, value) => MapEntry(
+        key.difference(startDate).inDays,
+        value,
+      ));
+    });
   }
 
   DateTime _getStartDate() {
@@ -115,7 +201,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           startMonth += 12;
           startYear--;
         }
-        
+
         return DateTime(startYear, startMonth, 1);
       case 'year':
         // Go back 5 years from current year (to show 6 years including current)
@@ -125,7 +211,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  List<FlSpot> _createSalesSpots(List<OutTransaction> outTransactions, [List<InTransaction>? inTransactions]) {
+  List<FlSpot> _createSalesSpots(List<OutTransaction> outTransactions, [List<Map<String, dynamic>>? inTransactions]) {
     switch (_selectedDataType) {
       case 'PURCHASES':
         return _createPurchaseSpots(inTransactions ?? []);
@@ -147,7 +233,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     if (_selectedPeriod == 'week') {
       Map<DateTime, double> dailySales = {};
-      
+
       // Initialize exactly 8 days (including today)
       for (int i = 0; i < 8; i++) {
         DateTime day = DateTime(
@@ -165,7 +251,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           tr.transactionDate.month,
           tr.transactionDate.day,
         );
-        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) && 
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
             tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
           dailySales[transactionDate] = (dailySales[transactionDate] ?? 0) + tr.price;
         }
@@ -181,19 +267,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
       return spots;
     } else if (_selectedPeriod == 'quarter') {
       Map<String, double> quarterSales = {};
-      
+
       // Initialize 4 quarters starting from startDate
       for (int i = 0; i < 4; i++) {
         DateTime quarterDate = DateTime(
-          startDate.year, 
-          startDate.month + (i * 3), 
+          startDate.year,
+          startDate.month + (i * 3),
           1
         );
         // Handle year transition
         if (quarterDate.month > 12) {
           quarterDate = DateTime(
-            quarterDate.year + 1, 
-            quarterDate.month - 12, 
+            quarterDate.year + 1,
+            quarterDate.month - 12,
             1
           );
         }
@@ -203,7 +289,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
       // Aggregate sales by quarter
       for (var tr in transactions) {
-        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) && 
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
             tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
           String quarterKey = _getQuarterKey(tr.transactionDate);
           quarterSales[quarterKey] = (quarterSales[quarterKey] ?? 0) + tr.price;
@@ -228,7 +314,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       // Aggregate sales by month
       for (var tr in transactions) {
         DateTime monthStart = DateTime(tr.transactionDate.year, tr.transactionDate.month, 1);
-        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) && 
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
             tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
           monthlySales[monthStart] = (monthlySales[monthStart] ?? 0) + tr.price;
         }
@@ -243,7 +329,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       return spots;
     } else if (_selectedPeriod == 'year') {
       Map<int, double> yearlySales = {};
-      
+
       // Initialize 6 years starting from startDate
       for (int i = 0; i < 6; i++) {
         int year = startDate.year + i;
@@ -252,7 +338,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
       // Aggregate sales by year
       for (var tr in transactions) {
-        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) && 
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
             tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
           int year = tr.transactionDate.year;
           yearlySales[year] = (yearlySales[year] ?? 0) + tr.price;
@@ -275,7 +361,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
       // Add sales data
       for (var tr in transactions) {
-        if (tr.transactionDate.isAfter(startDate) && 
+        if (tr.transactionDate.isAfter(startDate) &&
             tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
           dailySales[DateTime(
             tr.transactionDate.year,
@@ -296,7 +382,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  List<FlSpot> _createPurchaseSpots(List<InTransaction> transactions) {
+  List<FlSpot> _createPurchaseSpots(List<Map<String, dynamic>> transactions) {
     if (transactions.isEmpty) return [FlSpot(0, 0)];
     
     DateTime startDate = _getStartDate();
@@ -310,14 +396,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     // Aggregate purchase data
     for (var tr in transactions) {
-      if (tr.transactionDate.isAfter(startDate) && 
-          tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+      DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+      if (transactionDate.isAfter(startDate) &&
+          transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
         DateTime purchaseDate = DateTime(
-          tr.transactionDate.year,
-          tr.transactionDate.month,
-          tr.transactionDate.day,
+          transactionDate.year,
+          transactionDate.month,
+          transactionDate.day,
         );
-        dailyPurchases[purchaseDate] = (dailyPurchases[purchaseDate] ?? 0) + tr.price;
+        dailyPurchases[purchaseDate] = (dailyPurchases[purchaseDate] ?? 0) + (tr['price'] as num).toDouble();
       }
     }
 
@@ -331,7 +418,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return spots;
   }
 
-  List<FlSpot> _createProfitSpots(List<OutTransaction> outTransactions, List<InTransaction> inTransactions) {
+  List<FlSpot> _createProfitSpots(List<OutTransaction> outTransactions, List<Map<String, dynamic>> inTransactions) {
     DateTime startDate = _getStartDate();
     DateTime endDate = DateTime.now();
     
@@ -343,7 +430,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     // Calculate daily revenue
     for (var tr in outTransactions) {
-      if (tr.transactionDate.isAfter(startDate) && 
+      if (tr.transactionDate.isAfter(startDate) &&
           tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
         DateTime saleDate = DateTime(
           tr.transactionDate.year,
@@ -356,14 +443,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     // Subtract daily expenses
     for (var tr in inTransactions) {
-      if (tr.transactionDate.isAfter(startDate) && 
-          tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+      DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+      if (transactionDate.isAfter(startDate) &&
+          transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
         DateTime purchaseDate = DateTime(
-          tr.transactionDate.year,
-          tr.transactionDate.month,
-          tr.transactionDate.day,
+          transactionDate.year,
+          transactionDate.month,
+          transactionDate.day,
         );
-        dailyProfit[purchaseDate] = (dailyProfit[purchaseDate] ?? 0) - tr.price;
+        dailyProfit[purchaseDate] = (dailyProfit[purchaseDate] ?? 0) - (tr['price'] as num).toDouble();
       }
     }
 
@@ -421,7 +509,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       items: ['week', 'month', 'quarter', 'year'].map((String value) {
                         return DropdownMenuItem<String>(
                           value: value,
-                          child: Text(value.toUpperCase(), 
+                          child: Text(value.toUpperCase(),
                             style: TextStyle(fontSize: 12),
                           ),
                         );
@@ -516,38 +604,24 @@ class _ReportsScreenState extends State<ReportsScreen> {
         switch (_selectedGraphType) {
           'BLOCK' => _buildBarChart(),
           'PI' => _buildPieChart(),
-          'LINE' => _buildLineChart(),
-          _ => _buildLineChart(),
+          'LINE' => _buildChart(),
+          _ => _buildChart(),
         }
       ],
     );
   }
 
-  Widget _buildLineChart() {
-    // Calculate maxY with a minimum value to prevent zero interval
-    double maxY = _salesSpots.isEmpty ? 10 : 
-      _salesSpots.reduce((a, b) => a.y > b.y ? a : b).y;
-    maxY = max((maxY * 1.2).ceilToDouble(), 10.0); // Ensure minimum maxY of 10
-    
-    // Ensure interval is never zero by using max
-    double interval = max(maxY / 5, 1.0);
-
-    return SizedBox(
+  Widget _buildChart() {
+    return Container(
       height: 300,
+      padding: EdgeInsets.all(16),
       child: LineChart(
         LineChartData(
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: true,
-            horizontalInterval: interval, // Use non-zero interval
-            verticalInterval: 1,
-          ),
+          gridData: FlGridData(show: true),
           titlesData: FlTitlesData(
-            show: true,
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                interval: interval,
                 reservedSize: 40,
                 getTitlesWidget: (value, meta) {
                   return Text('₹${value.toStringAsFixed(0)}',
@@ -578,22 +652,109 @@ class _ReportsScreenState extends State<ReportsScreen> {
               sideTitles: SideTitles(showTitles: false),
             ),
           ),
+          lineTouchData: _selectedDataType == 'PROFIT' || _selectedDataType == 'INVENTORY' 
+            ? LineTouchData(enabled: true)  // Basic touch data without callback for these types
+            : LineTouchData(
+                enabled: true,
+                touchTooltipData: LineTouchTooltipData(
+                  tooltipBgColor: Colors.blueAccent.withOpacity(0.8),
+                ),
+                touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+                  if (event is FlTapUpEvent && touchResponse?.lineBarSpots != null) {
+                    final spotIndex = touchResponse!.lineBarSpots![0].spotIndex;
+                    _showDetailedBreakdown(spotIndex);
+                  }
+                },
+              ),
           borderData: FlBorderData(show: true),
-          minX: 0,
-          maxX: _salesSpots.isEmpty ? 10 : _salesSpots.length.toDouble() - 1,
-          minY: 0,
-          maxY: maxY,
           lineBarsData: [
             LineChartBarData(
               spots: _salesSpots,
               isCurved: true,
               color: Colors.blue,
               barWidth: 3,
-              dotData: const FlDotData(show: true),
+              dotData: FlDotData(show: true),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showDetailedBreakdown(int spotIndex) {
+    if (!_detailedData.containsKey(spotIndex)) return;
+
+    final data = _detailedData[spotIndex]!;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          width: double.maxFinite,
+          padding: EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Detailed Breakdown for ${DateFormat('MMM dd, yyyy').format(data.date)}',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 16),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Total Value: ₹${data.totalValue.toStringAsFixed(2)}',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      SizedBox(height: 20),
+                      
+                      // Show purchaser breakdown only for SALES data type
+                      if (_selectedDataType == 'SALES') ...[
+                        _buildBreakdownSection('By Purchaser', data.purchaserBreakdown),
+                        SizedBox(height: 20),
+                      ],
+                      
+                      // Show manufacturer breakdown only for PURCHASES data type
+                      if (_selectedDataType == 'PURCHASES')
+                        _buildBreakdownSection('By Manufacturer', data.manufacturerBreakdown),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBreakdownSection(String title, Map<String, double> data) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        SizedBox(height: 8),
+        ...data.entries.map((e) => Padding(
+          padding: EdgeInsets.only(left: 16, top: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(child: Text(e.key)),
+              Text('₹${e.value.toStringAsFixed(2)}'),
+            ],
+          ),
+        )).toList(),
+      ],
     );
   }
 
@@ -745,13 +906,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
         return _getShortMonthName(date.month);
       case 'quarter':
         final quarterStartDate = DateTime(
-          startDate.year, 
-          startDate.month + (value * 3), 
+          startDate.year,
+          startDate.month + (value * 3),
           1
         );
         final quarterEndDate = DateTime(
-          quarterStartDate.year, 
-          quarterStartDate.month + 2, 
+          quarterStartDate.year,
+          quarterStartDate.month + 2,
           1
         );
         return '${_getShortMonthName(quarterStartDate.month)}-'

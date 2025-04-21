@@ -84,38 +84,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final todayOutTransactions = await _transactionRepository
           .getOutTransactionsByDateRange(todayStart, todayEnd);
       _todaySales = todayOutTransactions.fold(
-          0.0, (sum, transaction) => sum + transaction.price);
-          // 0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
+          0.0, (sum, tr) => sum + tr.price);
 
       // Get today's IN transactions (purchases)
       final todayInTransactions = await _transactionRepository
           .getInTransactionsByDateRange(todayStart, todayEnd);
       _todayPurchases = todayInTransactions.fold(
-          0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
+          0.0, (sum, tr) => sum + (tr['price'] as num).toDouble());
 
       // Get monthly date range
       final monthStart = DateTime(today.year, today.month, 1);
       final monthEnd = DateTime(today.year, today.month + 1, 0);
 
-      // Get monthly OUT transactions
+      // Get monthly transactions
       final monthlyOutTransactions = await _transactionRepository
           .getOutTransactionsByDateRange(monthStart, monthEnd);
       _monthlyRevenue = monthlyOutTransactions.fold(
-          0.0, (sum, transaction) => sum + transaction.price);
-          // 0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
+          0.0, (sum, tr) => sum + tr.price);
 
-      // Get monthly IN transactions
       final monthlyInTransactions = await _transactionRepository
           .getInTransactionsByDateRange(monthStart, monthEnd);
       _monthlyExpenses = monthlyInTransactions.fold(
-          // 0.0, (sum, transaction) => sum + (transaction.price * transaction.quantity));
-          0.0, (sum, transaction) => sum + transaction.price);
+          0.0, (sum, tr) => sum + (tr['price'] as num).toDouble());
 
       setState(() => _isLoading = false);
     } catch (e) {
-      print('Error loading dashboard data: $e');
+      _logger.severe('Error loading dashboard data', e);
       setState(() => _isLoading = false);
-      _showError('Failed to load dashboard data');
+      if (mounted) {
+        _showError('Failed to load dashboard data: ${e.toString()}');
+      }
     }
   }
 
@@ -248,7 +246,7 @@ Future<void> _handleImport() async {
     // Count total rows first, excluding empty sheets
     for (final entry in excel.tables.entries) {
       final sheet = entry.value;
-      if (sheet != null && sheet.rows.length > 1) { // Check for more than just header
+      if (sheet.rows.length > 1) { // Check for more than just header
         // Count non-empty rows
         int nonEmptyRows = sheet.rows.skip(1).where((row) => 
           row.any((cell) => cell?.value != null)).length;
@@ -270,7 +268,7 @@ Future<void> _handleImport() async {
         final sheetName = entry.key;
         final sheet = entry.value;
         
-        if (sheet == null || sheet.rows.isEmpty) {
+        if (sheet.rows.isEmpty) {
           _logger.warning('Skipping empty sheet: $sheetName');
           continue;
         }
@@ -447,18 +445,20 @@ void _showSnackBar(String message, {bool isError = false}) {
       // ✨ Save the Excel file
       final encoded = excel.encode();
       if (encoded != null) {
-        final outFile = File(filePath)
+        File(filePath)
           ..createSync(recursive: true)
           ..writeAsBytesSync(encoded);
-      }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Backup saved to: $filePath'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Backup saved to: $filePath'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to encode Excel file');
       }
 
     } catch (e) {
@@ -553,6 +553,17 @@ void _showSnackBar(String message, {bool isError = false}) {
                             'Today\'s Sales',
                             '₹${_todaySales.toStringAsFixed(2)}',  // Direct use of ₹ symbol
                             Icons.monetization_on,
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 16),
+                      Row(
+                        children: [
+                          _buildStatCard(
+                            'Today\'s Purchases',
+                            '₹${_todayPurchases.toStringAsFixed(2)}',
+                            Icons.shopping_cart,
+                            color: Colors.orange,
                           ),
                         ],
                       ),
