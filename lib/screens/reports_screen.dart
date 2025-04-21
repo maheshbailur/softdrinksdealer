@@ -603,7 +603,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
         switch (_selectedGraphType) {
           'BLOCK' => _buildBarChart(),
-          'PI' => _buildPieChart(),
+          'PI' => _buildMainPieChart(),
           'LINE' => _buildChart(),
           _ => _buildChart(),
         }
@@ -956,6 +956,131 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  Widget _buildMainPieChart() {
+    double total = _salesSpots.fold(0, (sum, spot) => sum + spot.y);
+    List<PieChartSectionData> sections = [];
+    List<Widget> legendItems = [];
+    // Keep track of non-zero indices to map section index to data index
+    List<int> nonZeroIndices = [];
+
+    for (int i = 0; i < _salesSpots.length; i++) {
+      final spot = _salesSpots[i];
+      if (spot.y == 0) continue;
+
+      double percentage = (spot.y / total) * 100;
+      Color color = Colors.primaries[nonZeroIndices.length % Colors.primaries.length];
+      nonZeroIndices.add(i); // Store the original index
+
+      sections.add(PieChartSectionData(
+        value: spot.y,
+        title: '${percentage.toStringAsFixed(1)}%',
+        color: color,
+        radius: 80,
+        titleStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+        showTitle: true,
+      ));
+
+      DateTime startDate = _getStartDate();
+      String dateLabel = _selectedPeriod == 'week'
+          ? '${startDate.add(Duration(days: i)).day}/${_getShortMonthName(startDate.month)}'
+          : _getXAxisLabel(i);
+
+      legendItems.add(
+        GestureDetector(
+          onTap: _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY'
+            ? () => _showDetailedBreakdown(i)
+            : null,
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  color: color,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    dateLabel,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (spot.y > 0)
+                  Text(
+                    '₹${spot.y.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 350,  // Fixed container height
+      child: Column(
+        children: [
+          SizedBox(
+            height: 275,  // Fixed chart height
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 275,  // Fixed width to maintain aspect ratio
+                  height: 275,  // Fixed height to maintain aspect ratio
+                  child: PieChart(
+                    swapAnimationDuration: Duration.zero,
+                    PieChartData(
+                      sections: sections,
+                      sectionsSpace: 1,
+                      centerSpaceRadius: 50,
+                      startDegreeOffset: 270,
+                      pieTouchData: PieTouchData(
+                        enabled: _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY',
+                        touchCallback: (FlTouchEvent event, PieTouchResponse? touchResponse) {
+                          if (_selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY' &&
+                              event is FlTapUpEvent && touchResponse?.touchedSection != null) {
+                            final sectionIndex = touchResponse!.touchedSection!.touchedSectionIndex;
+                            // Map the section index back to the original data index
+                            final originalIndex = nonZeroIndices[sectionIndex];
+                            _showDetailedBreakdown(originalIndex);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 16),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: legendItems,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBarChart() {
     return SizedBox(
       height: 300,
@@ -1018,121 +1143,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
         ),
       ),
-    );
-  }
-
-  Widget _buildPieChart() {
-    double total = _salesSpots.fold(0, (sum, spot) => sum + spot.y);
-    List<PieChartSectionData> sections = [];
-    List<Widget> legendItems = [];
-
-    for (int i = 0; i < _salesSpots.length; i++) {
-      final spot = _salesSpots[i];
-      if (spot.y == 0) continue; // Skip indices with no value
-
-      double percentage = (spot.y / total) * 100;
-      Color color = Colors.primaries[i % Colors.primaries.length];
-
-      // Add section to the pie chart
-      sections.add(PieChartSectionData(
-        value: spot.y,
-        title: '${percentage.toStringAsFixed(1)}%',
-        color: color,
-        radius: 100,
-        showTitle: true,
-      ));
-
-      // Add corresponding legend item
-      DateTime startDate = _getStartDate();
-      String dateLabel = _selectedPeriod == 'week'
-          ? '${startDate.add(Duration(days: i)).day}/${_getShortMonthName(startDate.month)}'
-          : _getXAxisLabel(i);
-
-      legendItems.add(
-        GestureDetector(
-          onTap: _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY'
-            ? () => _showDetailedBreakdown(i)
-            : null,
-          child: Row(
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                color: color,
-              ),
-              SizedBox(width: 8),
-              Text(dateLabel, style: TextStyle(fontSize: 12)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        SizedBox(
-          height: 300,
-          child: Stack(
-            children: [
-              PieChart(
-                PieChartData(
-                  sections: sections,
-                  sectionsSpace: 2,
-                  centerSpaceRadius: 40,
-                ),
-              ),
-              if (_selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY')
-                Positioned.fill(
-                  child: GestureDetector(
-                    onTapUp: (details) {
-                      // Calculate which section was tapped based on angle
-                      final box = context.findRenderObject() as RenderBox;
-                      final center = Offset(box.size.width / 2, box.size.height / 2);
-                      final touchPoint = details.localPosition;
-                      final angle = (touchPoint - center).direction;
-                      
-                      // Convert angle to section index
-                      double totalValue = sections.fold(0.0, (sum, section) => sum + section.value);
-                      double accumulatedValue = 0;
-                      int tappedIndex = -1;
-                      
-                      for (int i = 0; i < sections.length; i++) {
-                        accumulatedValue += sections[i].value;
-                        double sectionAngle = (accumulatedValue / totalValue) * (2 * pi);
-                        if (angle <= sectionAngle) {
-                          tappedIndex = i;
-                          break;
-                        }
-                      }
-                      
-                      if (tappedIndex != -1) {
-                        _showDetailedBreakdown(tappedIndex);
-                      }
-                    },
-                  ),
-                ),
-            ],
-          ),
-        ),
-        SizedBox(height: 10),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
-            childAspectRatio: 3,
-          ),
-          itemCount: legendItems.length,
-          itemBuilder: (context, index) {
-            return _selectedDataType != 'PROFIT' && _selectedDataType != 'INVENTORY'
-              ? GestureDetector(
-                  onTap: () => _showDetailedBreakdown(index),
-                  child: legendItems[index],
-                )
-              : legendItems[index];
-          },
-        ),
-      ],
     );
   }
 
