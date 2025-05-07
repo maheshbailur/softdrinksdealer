@@ -40,7 +40,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     'SALES': 'SALES',
     'PURCHASES': 'PURCHASE',
     'PROFIT': 'PROFIT/LOSS',
-    'INVENTORY': 'INVENTORY LEVELS',
+    // 'INVENTORY': '',
+    // 'INVENTORY': 'INVENTORY LEVELS',
   };
 
   String _selectedPeriod = 'week';
@@ -189,23 +190,39 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'week':
         // Go back 7 days from today to show 8 days total (including today)
         return DateTime(now.year, now.month, now.day - 7);
+        
       case 'month':
-        return DateTime(now.year, now.month - 6, 1);
-      case 'quarter':
-        // For 4/4/2025, we want to start from Q3 2024
-        int currentQuarter = ((now.month - 1) ~/ 3);
+        // Go back 5 months to show last 6 months (including current)
+        int startMonth = now.month - 5;
         int startYear = now.year;
-        int startMonth = (currentQuarter * 3) + 1 - 9; // Go back 3 quarters
-
         if (startMonth <= 0) {
           startMonth += 12;
           startYear--;
         }
-
         return DateTime(startYear, startMonth, 1);
+        
+      case 'quarter':
+        // Calculate current quarter
+        int currentQuarter = ((now.month - 1) ~/ 3) + 1;
+        int startYear = now.year;
+        
+        // Go back 4 quarters to show last 5 quarters (including current)
+        int startQuarter = currentQuarter - 4;
+        
+        // Adjust year if we go back to previous year(s)
+        while (startQuarter <= 0) {
+          startQuarter += 4;
+          startYear--;
+        }
+        
+        // Convert quarter to month (Q1=1, Q2=4, Q3=7, Q4=10)
+        int startMonth = ((startQuarter - 1) * 3) + 1;
+        return DateTime(startYear, startMonth, 1);
+        
       case 'year':
         // Go back 5 years from current year (to show 6 years including current)
         return DateTime(now.year - 5, 1, 1);
+        
       default:
         return now.subtract(Duration(days: 7));
     }
@@ -387,82 +404,299 @@ class _ReportsScreenState extends State<ReportsScreen> {
     
     DateTime startDate = _getStartDate();
     DateTime endDate = DateTime.now();
-    
-    Map<DateTime, double> dailyPurchases = {};
-    // Initialize dates
-    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
-      dailyPurchases[startDate.add(Duration(days: i))] = 0;
-    }
 
-    // Aggregate purchase data
-    for (var tr in transactions) {
-      DateTime transactionDate = DateTime.parse(tr['transaction_date']);
-      if (transactionDate.isAfter(startDate) &&
-          transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
-        DateTime purchaseDate = DateTime(
-          transactionDate.year,
-          transactionDate.month,
-          transactionDate.day,
-        );
-        dailyPurchases[purchaseDate] = (dailyPurchases[purchaseDate] ?? 0) + (tr['price'] as num).toDouble();
+    if (_selectedPeriod == 'month') {
+      Map<DateTime, double> monthlyPurchases = {};
+      // Initialize monthly buckets for last 6 months
+      for (int i = 0; i <= 5; i++) {
+        DateTime monthDate = DateTime(startDate.year, startDate.month + i, 1);
+        monthlyPurchases[monthDate] = 0;
       }
-    }
 
-    // Convert to spots
-    List<FlSpot> spots = [];
-    var sortedDates = dailyPurchases.keys.toList()..sort();
-    for (int i = 0; i < sortedDates.length; i++) {
-      spots.add(FlSpot(i.toDouble(), dailyPurchases[sortedDates[i]] ?? 0));
-    }
+      // Aggregate purchases by month
+      for (var tr in transactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        DateTime monthStart = DateTime(transactionDate.year, transactionDate.month, 1);
+        if (transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          monthlyPurchases[monthStart] = (monthlyPurchases[monthStart] ?? 0) + (tr['price'] as num).toDouble();
+        }
+      }
 
-    return spots;
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedDates = monthlyPurchases.keys.toList()..sort();
+      for (int i = 0; i < sortedDates.length; i++) {
+        spots.add(FlSpot(i.toDouble(), monthlyPurchases[sortedDates[i]] ?? 0));
+      }
+      return spots;
+
+    } else if (_selectedPeriod == 'quarter') {
+      Map<String, double> quarterPurchases = {};
+
+      // Initialize 4 quarters starting from startDate
+      for (int i = 0; i < 4; i++) {
+        DateTime quarterDate = DateTime(
+          startDate.year,
+          startDate.month + (i * 3),
+          1
+        );
+        // Handle year transition
+        if (quarterDate.month > 12) {
+          quarterDate = DateTime(
+            quarterDate.year + 1,
+            quarterDate.month - 12,
+            1
+          );
+        }
+        String quarterKey = _getQuarterKey(quarterDate);
+        quarterPurchases[quarterKey] = 0;
+      }
+
+      // Aggregate purchases by quarter
+      for (var tr in transactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        if (transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          String quarterKey = _getQuarterKey(transactionDate);
+          quarterPurchases[quarterKey] = (quarterPurchases[quarterKey] ?? 0) + (tr['price'] as num).toDouble();
+        }
+      }
+
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedQuarters = quarterPurchases.keys.toList()..sort();
+      for (int i = 0; i < sortedQuarters.length; i++) {
+        spots.add(FlSpot(i.toDouble(), quarterPurchases[sortedQuarters[i]] ?? 0));
+      }
+      return spots;
+
+    } else if (_selectedPeriod == 'year') {
+      Map<int, double> yearlyPurchases = {};
+
+      // Initialize 6 years starting from startDate
+      for (int i = 0; i < 6; i++) {
+        int year = startDate.year + i;
+        yearlyPurchases[year] = 0;
+      }
+
+      // Aggregate purchases by year
+      for (var tr in transactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        if (transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          int year = transactionDate.year;
+          yearlyPurchases[year] = (yearlyPurchases[year] ?? 0) + (tr['price'] as num).toDouble();
+        }
+      }
+
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedYears = yearlyPurchases.keys.toList()..sort();
+      for (int i = 0; i < sortedYears.length; i++) {
+        spots.add(FlSpot(i.toDouble(), yearlyPurchases[sortedYears[i]] ?? 0));
+      }
+      return spots;
+
+    } else {
+      // Weekly view (default)
+      Map<DateTime, double> dailyPurchases = {};
+      // Initialize dates
+      for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+        dailyPurchases[startDate.add(Duration(days: i))] = 0;
+      }
+
+      // Aggregate purchase data
+      for (var tr in transactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        if (transactionDate.isAfter(startDate) &&
+            transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          DateTime purchaseDate = DateTime(
+            transactionDate.year,
+            transactionDate.month,
+            transactionDate.day,
+          );
+          dailyPurchases[purchaseDate] = (dailyPurchases[purchaseDate] ?? 0) + (tr['price'] as num).toDouble();
+        }
+      }
+
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedDates = dailyPurchases.keys.toList()..sort();
+      for (int i = 0; i < sortedDates.length; i++) {
+        spots.add(FlSpot(i.toDouble(), dailyPurchases[sortedDates[i]] ?? 0));
+      }
+      return spots;
+    }
   }
 
   List<FlSpot> _createProfitSpots(List<OutTransaction> outTransactions, List<Map<String, dynamic>> inTransactions) {
     DateTime startDate = _getStartDate();
     DateTime endDate = DateTime.now();
-    
-    Map<DateTime, double> dailyProfit = {};
-    // Initialize dates
-    for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
-      dailyProfit[startDate.add(Duration(days: i))] = 0;
-    }
 
-    // Calculate daily revenue
-    for (var tr in outTransactions) {
-      if (tr.transactionDate.isAfter(startDate) &&
-          tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
-        DateTime saleDate = DateTime(
-          tr.transactionDate.year,
-          tr.transactionDate.month,
-          tr.transactionDate.day,
-        );
-        dailyProfit[saleDate] = (dailyProfit[saleDate] ?? 0) + tr.price;
+    if (_selectedPeriod == 'month') {
+      Map<DateTime, double> monthlyProfit = {};
+      // Initialize monthly buckets
+      for (int i = 0; i <= 5; i++) {
+        DateTime monthDate = DateTime(startDate.year, startDate.month + i, 1);
+        monthlyProfit[monthDate] = 0;
       }
-    }
 
-    // Subtract daily expenses
-    for (var tr in inTransactions) {
-      DateTime transactionDate = DateTime.parse(tr['transaction_date']);
-      if (transactionDate.isAfter(startDate) &&
-          transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
-        DateTime purchaseDate = DateTime(
-          transactionDate.year,
-          transactionDate.month,
-          transactionDate.day,
-        );
-        dailyProfit[purchaseDate] = (dailyProfit[purchaseDate] ?? 0) - (tr['price'] as num).toDouble();
+      // Calculate monthly revenue
+      for (var tr in outTransactions) {
+        DateTime monthStart = DateTime(tr.transactionDate.year, tr.transactionDate.month, 1);
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          monthlyProfit[monthStart] = (monthlyProfit[monthStart] ?? 0) + tr.price;
+        }
       }
-    }
 
-    // Convert to spots
-    List<FlSpot> spots = [];
-    var sortedDates = dailyProfit.keys.toList()..sort();
-    for (int i = 0; i < sortedDates.length; i++) {
-      spots.add(FlSpot(i.toDouble(), dailyProfit[sortedDates[i]] ?? 0));
-    }
+      // Subtract monthly expenses
+      for (var tr in inTransactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        DateTime monthStart = DateTime(transactionDate.year, transactionDate.month, 1);
+        if (transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          monthlyProfit[monthStart] = (monthlyProfit[monthStart] ?? 0) - (tr['price'] as num).toDouble();
+        }
+      }
 
-    return spots;
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedDates = monthlyProfit.keys.toList()..sort();
+      for (int i = 0; i < sortedDates.length; i++) {
+        spots.add(FlSpot(i.toDouble(), monthlyProfit[sortedDates[i]] ?? 0));
+      }
+      return spots;
+
+    } else if (_selectedPeriod == 'quarter') {
+      Map<String, double> quarterProfit = {};
+
+      // Initialize 4 quarters starting from startDate
+      for (int i = 0; i < 4; i++) {
+        DateTime quarterDate = DateTime(
+          startDate.year,
+          startDate.month + (i * 3),
+          1
+        );
+        // Handle year transition
+        if (quarterDate.month > 12) {
+          quarterDate = DateTime(
+            quarterDate.year + 1,
+            quarterDate.month - 12,
+            1
+          );
+        }
+        String quarterKey = _getQuarterKey(quarterDate);
+        quarterProfit[quarterKey] = 0;
+      }
+
+      // Calculate quarterly revenue
+      for (var tr in outTransactions) {
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          String quarterKey = _getQuarterKey(tr.transactionDate);
+          quarterProfit[quarterKey] = (quarterProfit[quarterKey] ?? 0) + tr.price;
+        }
+      }
+
+      // Subtract quarterly expenses
+      for (var tr in inTransactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        if (transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          String quarterKey = _getQuarterKey(transactionDate);
+          quarterProfit[quarterKey] = (quarterProfit[quarterKey] ?? 0) - (tr['price'] as num).toDouble();
+        }
+      }
+
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedQuarters = quarterProfit.keys.toList()..sort();
+      for (int i = 0; i < sortedQuarters.length; i++) {
+        spots.add(FlSpot(i.toDouble(), quarterProfit[sortedQuarters[i]] ?? 0));
+      }
+      return spots;
+
+    } else if (_selectedPeriod == 'year') {
+      Map<int, double> yearlyProfit = {};
+
+      // Initialize 6 years starting from startDate
+      for (int i = 0; i < 6; i++) {
+        int year = startDate.year + i;
+        yearlyProfit[year] = 0;
+      }
+
+      // Calculate yearly revenue
+      for (var tr in outTransactions) {
+        if (tr.transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          int year = tr.transactionDate.year;
+          yearlyProfit[year] = (yearlyProfit[year] ?? 0) + tr.price;
+        }
+      }
+
+      // Subtract yearly expenses
+      for (var tr in inTransactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        if (transactionDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+            transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          int year = transactionDate.year;
+          yearlyProfit[year] = (yearlyProfit[year] ?? 0) - (tr['price'] as num).toDouble();
+        }
+      }
+
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedYears = yearlyProfit.keys.toList()..sort();
+      for (int i = 0; i < sortedYears.length; i++) {
+        spots.add(FlSpot(i.toDouble(), yearlyProfit[sortedYears[i]] ?? 0));
+      }
+      return spots;
+
+    } else {
+      // Weekly view (default)
+      Map<DateTime, double> dailyProfit = {};
+      // Initialize dates
+      for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+        dailyProfit[startDate.add(Duration(days: i))] = 0;
+      }
+
+      // Calculate daily revenue
+      for (var tr in outTransactions) {
+        if (tr.transactionDate.isAfter(startDate) &&
+            tr.transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          DateTime saleDate = DateTime(
+            tr.transactionDate.year,
+            tr.transactionDate.month,
+            tr.transactionDate.day,
+          );
+          dailyProfit[saleDate] = (dailyProfit[saleDate] ?? 0) + tr.price;
+        }
+      }
+
+      // Subtract daily expenses
+      for (var tr in inTransactions) {
+        DateTime transactionDate = DateTime.parse(tr['transaction_date']);
+        if (transactionDate.isAfter(startDate) &&
+            transactionDate.isBefore(endDate.add(Duration(days: 1)))) {
+          DateTime purchaseDate = DateTime(
+            transactionDate.year,
+            transactionDate.month,
+            transactionDate.day,
+          );
+          dailyProfit[purchaseDate] = (dailyProfit[purchaseDate] ?? 0) - (tr['price'] as num).toDouble();
+        }
+      }
+
+      // Convert to spots
+      List<FlSpot> spots = [];
+      var sortedDates = dailyProfit.keys.toList()..sort();
+      for (int i = 0; i < sortedDates.length; i++) {
+        spots.add(FlSpot(i.toDouble(), dailyProfit[sortedDates[i]] ?? 0));
+      }
+      return spots;
+    }
   }
 
   List<FlSpot> _createInventorySpots() {
@@ -1028,18 +1262,30 @@ class _ReportsScreenState extends State<ReportsScreen> {
       );
     }
 
+    // Calculate dynamic height based on number of legend items
+    final double baseChartHeight = 250;  // Fixed chart height
+    final double legendItemHeight = 25;   // Height per legend item
+    final double legendSpacing = 4;       // Vertical spacing between items
+    final int numberOfLegendItems = legendItems.length;
+    
+    // Calculate total height needed for legend
+    final double legendHeight = (legendItemHeight + legendSpacing) * numberOfLegendItems;
+    
+    // Total container height = chart height + spacing + legend height + padding
+    final double totalHeight = baseChartHeight + 16 + legendHeight;
+
     return Container(
-      height: 350,  // Fixed container height
+      height: totalHeight,  // Dynamic container height
       child: Column(
         children: [
           SizedBox(
-            height: 275,  // Fixed chart height
+            height: baseChartHeight,  // Fixed chart height
             child: Stack(
               alignment: Alignment.center,
               children: [
                 SizedBox(
-                  width: 275,  // Fixed width to maintain aspect ratio
-                  height: 275,  // Fixed height to maintain aspect ratio
+                  width: baseChartHeight,  // Keep width equal to height for circle
+                  height: baseChartHeight,
                   child: PieChart(
                     swapAnimationDuration: Duration.zero,
                     PieChartData(
@@ -1066,7 +1312,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
           ),
           SizedBox(height: 16),
-          Expanded(
+          Container(
+            height: legendHeight,
             child: SingleChildScrollView(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16),
