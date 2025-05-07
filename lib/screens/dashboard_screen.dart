@@ -518,12 +518,12 @@ void _showSnackBar(String message, {bool isError = false}) {
               ),
             ],
           ),
-          IconButton(
-            icon: Icon(Icons.delete_forever),
-            color: Colors.red,
-            onPressed: _resetAllData,
-            tooltip: 'Reset All Data',
-          ),
+          // IconButton(
+          //   icon: Icon(Icons.delete_forever),
+          //   color: Colors.red,
+          //   onPressed: _resetAllData,
+          //   tooltip: 'Reset All Data',
+          // ),
         ],
       ),
       body: _isLoading
